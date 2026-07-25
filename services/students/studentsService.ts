@@ -30,6 +30,7 @@ import {
 import { studentsCache } from "@/services/students/studentsCache";
 import { AVATAR_COLORS } from "@/constants/students";
 import { Student, StudentFormValues } from "@/types/students";
+import { NO_SECTION_ID } from "@/lib/utils";
 
 function randomAvatarColor(): string {
   return AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
@@ -116,7 +117,8 @@ function normalizeStudent(id: string, data: Record<string, unknown>): Student {
   const parent = (data.parent as Record<string, unknown>) || {};
   const contact = (data.contact as Record<string, unknown>) || {};
 
-  return {
+  
+return {
     id,
     profile: {
       name: (profile.name as string) || "",
@@ -129,7 +131,9 @@ function normalizeStudent(id: string, data: Record<string, unknown>): Student {
       photoUrl: (profile.photoUrl as string | null) ?? null,
     },
     className: (data.className as string) || "",
+    classId: (data.classId as string) || "",
     section: (data.section as string) || null,
+    sectionId: (data.sectionId as string) || NO_SECTION_ID,
     parent: {
       fatherName: (parent.fatherName as string) || "",
       fatherPhone: (parent.fatherPhone as string) || "",
