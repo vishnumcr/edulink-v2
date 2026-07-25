@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { admissionService } from '@/services/admission/admissionService';
-import { classesService } from '@/services/academic/classesService';
+import { classesRepository } from '@/repositories/academic/classesRepository';
 import { routesService } from '@/services/transport/routesService';
 import { AdmissionInput, Category, Gender, BloodGroup } from '@/types/admission';
 import { Route } from '@/types/transport';
@@ -21,6 +21,7 @@ import {
 
 interface ClassInfo {
   className: string;
+  sections: { id: string; name: string }[];
 }
 
 interface StudentInfo {
@@ -89,7 +90,6 @@ interface AdmissionInfo {
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
-const SECTIONS = ['A', 'B', 'C', 'D', 'E'];
 const BLOOD_GROUPS: BloodGroup[] = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-', ''];
 const CATEGORIES: Category[] = ['General', 'OBC', 'SC', 'ST', 'EWS'];
 const STATES = [
@@ -157,8 +157,11 @@ export default function AdmissionPage() {
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   useEffect(() => {
     if (!schoolId) return;
-    const unsub = classesService.subscribeToClassLabels(schoolId, (labels) => {
-      setClasses(labels.map((className) => ({ className })));
+    const unsub = classesRepository.subscribeToClasses(schoolId, (docs) => {
+      setClasses(docs.map((d) => ({
+        className: (d.data.className as string) || '',
+        sections: (d.data.sections as { id: string; name: string }[] | undefined) ?? [],
+      })));
     });
     return () => unsub();
   }, [schoolId]);
@@ -1083,7 +1086,7 @@ export default function AdmissionPage() {
                       <div className="ap-field">
                         <label className="ap-label">Applying for Class <span>*</span></label>
                         <select className="ap-select" value={admission.applyingForClass}
-                          onChange={e => setAdmission({ ...admission, applyingForClass: e.target.value })}>
+                          onChange={e => setAdmission({ ...admission, applyingForClass: e.target.value, sectionPreference: '' })}>
                           <option value="">—</option>
                           {classes.map(c => <option key={c.className} value={c.className}>Class {c.className}</option>)}
                         </select>
@@ -1091,9 +1094,11 @@ export default function AdmissionPage() {
                       <div className="ap-field">
                         <label className="ap-label">Section Preference</label>
                         <select className="ap-select" value={admission.sectionPreference}
+                          disabled={!admission.applyingForClass}
                           onChange={e => setAdmission({ ...admission, sectionPreference: e.target.value })}>
                           <option value="">No preference</option>
-                          {SECTIONS.map(s => <option key={s} value={s}>Section {s}</option>)}
+                          {(classes.find(c => c.className === admission.applyingForClass)?.sections ?? [])
+                            .map(s => <option key={s.id} value={s.name}>Section {s.name}</option>)}
                         </select>
                       </div>
                       <div className="ap-field">

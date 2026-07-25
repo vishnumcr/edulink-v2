@@ -141,8 +141,10 @@ export interface StudentFormValues {
   apaarId: string;
   penId: string;
   className: string;
+  classId: string;
   /** Empty string means "no section" — converted to null on save (see toNewDocument/toUpdateDocument). Kept as a plain string here since form inputs don't have a null state. */
   section: string;
+  sectionId: string;
   fatherName: string;
   fatherPhone: string;
   email: string;

@@ -174,10 +174,12 @@ function toNewDocument(values: StudentFormValues): NewStudentDocument {
       photoUrl: null,
     },
     className: values.className,
+    classId: values.classId,
     // "" means no section was chosen — stored as null, not an empty
     // string, so every reader treats it as "genuinely no section" the
     // same way regardless of write path.
     section: values.section || null,
+    sectionId: values.sectionId,
     parent: {
       fatherName: values.fatherName,
       fatherPhone: values.fatherPhone,
@@ -206,7 +208,9 @@ function toUpdateDocument(values: StudentFormValues): StudentDocumentUpdate {
       photoUrl: null,
     },
     className: values.className,
+    classId: values.classId,
     section: values.section || null,
+    sectionId: values.sectionId,
     parent: {
       fatherName: values.fatherName,
       fatherPhone: values.fatherPhone,

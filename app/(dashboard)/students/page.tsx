@@ -24,7 +24,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { studentsService } from '@/services/students/studentsService';
-import { GRADES, SECTIONS, BLOOD_GROUPS } from '@/constants/students';
+import { BLOOD_GROUPS } from '@/constants/students';
+import { classesRepository } from '@/repositories/academic/classesRepository';
 import {
   Student, StudentFormValues, StudentStatus,
   StudentSortKey, STUDENTS_PAGE_SIZE,
@@ -34,7 +35,7 @@ import {
   Phone, User, BookOpen, Pencil, Trash2, Check,
   Mail, Hash, Calendar, Users, AlertCircle, ChevronLeft, ChevronRight, RefreshCw,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, NO_SECTION_ID } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,7 +59,8 @@ import {
 const EMPTY_FORM: StudentFormValues = {
   name: '', rollNo: '', gender: 'Male', dob: '', bloodGroup: '',
   apaarId: '', penId: '',
-  className: '', section: '', fatherName: '', fatherPhone: '',
+  className: '', classId: '', section: '', sectionId: NO_SECTION_ID,
+  fatherName: '', fatherPhone: '',
   email: '', phone: '', address: '', status: 'active',
 };
 
@@ -145,6 +147,34 @@ export default function StudentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schoolId]);
 
+  // Real class + section data — replaces the old hardcoded GRADES/
+  // SECTIONS constants, which let staff assign a student to a grade
+  // or section that doesn't actually exist for this school (or, for
+  // section, one that belongs to a DIFFERENT class than the one
+  // selected). Same source the admission page and timetable/
+  // attendance pages already use.
+  const [classes, setClasses] = useState<{ id: string; className: string; sections: { id: string; name: string }[] }[]>([]);
+  useEffect(() => {
+    if (!schoolId) return;
+    const unsub = classesRepository.subscribeToClasses(schoolId, (docs) => {
+      setClasses(docs.map((d) => ({
+        id: d.id,
+        className: (d.data.className as string) || '',
+        sections: (d.data.sections as { id: string; name: string }[] | undefined) ?? [],
+      })));
+    });
+    return () => unsub();
+  }, [schoolId]);
+
+  // Every distinct section name across every class, for the FILTER
+  // dropdown only — unlike the edit form (where a section must belong
+  // to whichever specific class is selected), staff filtering the
+  // roster may reasonably want "show me every Section A across every
+  // grade," so this is deliberately a union, not scoped to one class.
+  const allSectionNames = Array.from(
+    new Set(classes.flatMap((c) => c.sections.map((s) => s.name)))
+  ).sort();
+
   async function handleManualRefresh() {
     setRefreshing(true);
     await refreshStudents();
@@ -212,7 +242,9 @@ export default function StudentsPage() {
       apaarId: s.profile.apaarId ?? '',
       penId: s.profile.penId ?? '',
       className: s.className,
+      classId: s.classId || '',
       section: s.section ?? '',
+      sectionId: s.sectionId || NO_SECTION_ID,
       fatherName: s.parent.fatherName,
       fatherPhone: s.parent.fatherPhone,
       email: s.contact.email,
@@ -236,7 +268,9 @@ export default function StudentsPage() {
             ...selected,
             profile: { ...selected.profile, name: form.name, rollNo: form.rollNo, gender: form.gender, dob: form.dob, bloodGroup: form.bloodGroup, apaarId: form.apaarId, penId: form.penId },
             className: form.className,
+            classId: form.classId,
             section: form.section || null,
+            sectionId: form.sectionId,
             parent: { ...selected.parent, fatherName: form.fatherName, fatherPhone: form.fatherPhone },
             contact: { email: form.email, phone: form.phone, address: form.address },
             status: form.status,
@@ -337,7 +371,7 @@ export default function StudentsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="All">All Grades</SelectItem>
-              {GRADES.map(g => <SelectItem key={g} value={g}>Grade {g}</SelectItem>)}
+              {classes.map(c => <SelectItem key={c.id} value={c.className}>Grade {c.className}</SelectItem>)}
             </SelectContent>
           </Select>
 
@@ -347,7 +381,7 @@ export default function StudentsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="All">All Sections</SelectItem>
-              {SECTIONS.map(s => <SelectItem key={s} value={s}>Section {s}</SelectItem>)}
+              {allSectionNames.map(s => <SelectItem key={s} value={s}>Section {s}</SelectItem>)}
             </SelectContent>
           </Select>
 
@@ -661,10 +695,16 @@ export default function StudentsPage() {
             <div className="mb-3.5 grid grid-cols-3 gap-2.5">
               <div>
                 <label className="mb-1.5 block text-[0.62rem] font-bold uppercase tracking-[0.09em] text-slate-600">Grade *</label>
-                <Select value={form.className} onValueChange={v => setForm({ ...form, className: v })}>
+                <Select
+                  value={form.className}
+                  onValueChange={v => {
+                    const matched = classes.find(c => c.className === v);
+                    setForm({ ...form, className: v, classId: matched?.id ?? '', section: '', sectionId: NO_SECTION_ID });
+                  }}
+                >
                   <SelectTrigger><SelectValue placeholder="—"/></SelectTrigger>
                   <SelectContent>
-                    {GRADES.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                    {classes.map(c => <SelectItem key={c.id} value={c.className}>{c.className}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -672,12 +712,22 @@ export default function StudentsPage() {
                 <label className="mb-1.5 block text-[0.62rem] font-bold uppercase tracking-[0.09em] text-slate-600">Section</label>
                 <Select
                   value={form.section || '__none__'}
-                  onValueChange={v => setForm({ ...form, section: v === '__none__' ? '' : v })}
+                  disabled={!form.className}
+                  onValueChange={v => {
+                    if (v === '__none__') {
+                      setForm({ ...form, section: '', sectionId: NO_SECTION_ID });
+                      return;
+                    }
+                    const matchedClass = classes.find(c => c.className === form.className);
+                    const matchedSection = matchedClass?.sections.find(s => s.name === v);
+                    setForm({ ...form, section: v, sectionId: matchedSection?.id ?? NO_SECTION_ID });
+                  }}
                 >
                   <SelectTrigger><SelectValue placeholder="—"/></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">No section</SelectItem>
-                    {SECTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    {(classes.find(c => c.className === form.className)?.sections ?? [])
+                      .map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
