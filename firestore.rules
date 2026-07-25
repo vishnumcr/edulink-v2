@@ -1,0 +1,8 @@
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow anyone to read/write for now while you build the login flow
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

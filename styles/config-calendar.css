@@ -1,0 +1,512 @@
+/* ------------------------------------------------------------------
+ * styles/config-calendar.css
+ *
+ * Backs the Academic Calendar settings page
+ * (app/(dashboard)/settings/calendar). Scoped under `.cfg-` (generic
+ * settings-content shell — same boilerplate as config-timings.css,
+ * copied rather than shared, matching that file's own convention) and
+ * `.acal-` (this page's own tabs/forms/list/modal chrome).
+ * ------------------------------------------------------------------ */
+
+@keyframes cfg-shimmer-sweep {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+@keyframes acal-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Generic settings-content shell ─────────────────────────────── */
+.cfg-content-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.5rem 1.5rem 0;
+}
+.cfg-content-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.cfg-content-sub {
+  font-size: 0.78rem;
+  color: #64748b;
+  margin-top: 0.2rem;
+}
+.cfg-dirty-pill {
+  font-size: 0.72rem;
+  color: #d97706;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+.cfg-content-body {
+  padding: 1.25rem 1.5rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.cfg-shimmer {
+  height: 44px;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(90deg, #f1f5f9 25%, #f8fafc 37%, #f1f5f9 63%);
+  background-size: 400px 100%;
+  animation: cfg-shimmer-sweep 1.4s ease-in-out infinite;
+}
+
+/* ── Page tabs ──────────────────────────────────────────────────── */
+.acal-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+.acal-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  background: transparent;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #94a3b8;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+.acal-tab.active {
+  color: #0f172a;
+  border-bottom-color: #0f172a;
+}
+.acal-tab:hover:not(.active) { color: #475569; }
+
+.acal-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+.acal-banner svg { flex-shrink: 0; margin-top: 0.1rem; }
+
+.acal-error {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #fef2f2;
+  color: #dc2626;
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* ── Year & Terms ───────────────────────────────────────────────── */
+.acal-year-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.9rem;
+  max-width: 480px;
+}
+.acal-field { display: flex; flex-direction: column; gap: 0.3rem; }
+.acal-field label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+}
+.acal-input, .acal-select, .acal-textarea {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.82rem;
+  color: #0f172a;
+  font-family: inherit;
+  width: 100%;
+  background: #fff;
+}
+.acal-input:focus, .acal-select:focus, .acal-textarea:focus {
+  outline: none;
+  border-color: #94a3b8;
+}
+.acal-textarea { resize: vertical; min-height: 60px; }
+
+.acal-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+}
+.acal-section-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.acal-section-sub {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  margin-top: 0.1rem;
+}
+
+.acal-term-row {
+  display: grid;
+  grid-template-columns: 1fr 150px 150px 32px;
+  align-items: center;
+  gap: 0.5rem;
+  background: #fff;
+  border: 1px solid #f1f5f9;
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.4rem;
+  animation: acal-fade-in 0.2s ease both;
+}
+.acal-term-empty {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  padding: 0.6rem 0;
+}
+
+.acal-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px dashed #cbd5e1;
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #2563eb;
+  cursor: pointer;
+  margin-top: 0.4rem;
+}
+.acal-add-btn:hover { background: #f8fafc; }
+
+.acal-del-btn {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem;
+  border-radius: 6px;
+}
+.acal-del-btn:hover { background: #fef2f2; color: #dc2626; }
+
+.acal-save-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.acal-save-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background: #0f172a;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.acal-save-btn:disabled { opacity: 0.5; cursor: default; }
+.acal-save-btn.saved { background: #16a34a; }
+
+/* ── Holidays & Working Days / Events lists ────────────────────── */
+.acal-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.acal-day-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: #fff;
+  border: 1px solid #f1f5f9;
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.4rem;
+  animation: acal-fade-in 0.2s ease both;
+}
+.acal-day-row.holiday-public { border-left-color: #dc2626; }
+.acal-day-row.holiday-school { border-left-color: #d97706; }
+.acal-day-row.working-day { border-left-color: #16a34a; }
+
+.acal-day-date {
+  width: 92px;
+  flex-shrink: 0;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  color: #475569;
+  line-height: 1.3;
+}
+.acal-day-weekday {
+  display: block;
+  font-size: 0.65rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.acal-day-info { flex: 1; min-width: 0; }
+.acal-day-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+.acal-day-notes {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  margin-top: 0.1rem;
+}
+.acal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+}
+.acal-badge.public { background: #fef2f2; color: #dc2626; }
+.acal-badge.school { background: #fffbeb; color: #d97706; }
+.acal-badge.working { background: #f0fdf4; color: #16a34a; }
+.acal-badge.exam { background: #eff6ff; color: #2563eb; }
+.acal-badge.ptm { background: #f5f3ff; color: #7c3aed; }
+.acal-badge.function { background: #fdf2f8; color: #db2777; }
+.acal-badge.sports { background: #ecfeff; color: #0891b2; }
+.acal-badge.other { background: #f1f5f9; color: #475569; }
+
+.acal-row-actions {
+  display: flex;
+  gap: 0.15rem;
+  flex-shrink: 0;
+}
+.acal-icon-btn {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem;
+  border-radius: 6px;
+}
+.acal-icon-btn:hover { background: #f1f5f9; color: #334155; }
+.acal-icon-btn.danger:hover { background: #fef2f2; color: #dc2626; }
+
+.acal-empty {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  padding: 2rem 0;
+}
+
+/* ── Modals ─────────────────────────────────────────────────────── */
+.acal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 1rem;
+}
+.acal-modal {
+  background: #fff;
+  border-radius: 14px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: acal-fade-in 0.15s ease both;
+}
+.acal-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 1.1rem 1.1rem 0.6rem;
+}
+.acal-modal-title { font-size: 0.95rem; font-weight: 700; color: #0f172a; }
+.acal-modal-sub { font-size: 0.74rem; color: #94a3b8; margin-top: 0.15rem; }
+.acal-modal-x {
+  border: none;
+  background: #f1f5f9;
+  color: #64748b;
+  border-radius: 999px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.acal-modal-body {
+  padding: 0.6rem 1.1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.acal-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0 1.1rem 1.1rem;
+}
+.acal-mcancel {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+}
+.acal-msubmit {
+  border: none;
+  background: #0f172a;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.55rem 1rem;
+  cursor: pointer;
+}
+.acal-msubmit:disabled { opacity: 0.5; cursor: default; }
+.acal-msubmit.danger { background: #dc2626; }
+
+.acal-type-toggle {
+  display: flex;
+  gap: 0.4rem;
+}
+.acal-type-opt {
+  flex: 1;
+  text-align: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.5rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #64748b;
+  background: #fff;
+  cursor: pointer;
+}
+.acal-type-opt.active { border-color: #0f172a; color: #0f172a; background: #f8fafc; }
+
+@media (max-width: 640px) {
+  .acal-year-grid { grid-template-columns: 1fr; }
+  .acal-term-row { grid-template-columns: 1fr 1fr 32px; }
+}
+
+/* ── Month preview (visual calendar, above the exceptions list) ── */
+.acal-month-preview {
+  max-width: 420px;
+  margin-bottom: 1.1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1rem;
+  background: #fff;
+}
+.acal-month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.acal-month-nav-btn {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.3rem 0.4rem;
+  cursor: pointer;
+  color: #475569;
+  display: flex;
+  align-items: center;
+}
+.acal-month-nav-btn:hover { background: #f8fafc; }
+.acal-month-label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.acal-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.acal-month-weekday {
+  text-align: center;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  padding-bottom: 0.35rem;
+}
+.acal-month-cell {
+  height: 42px;
+  border-radius: 8px;
+  border: 1px solid #f1f5f9;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+}
+.acal-month-cell:hover { border-color: #cbd5e1; }
+.acal-month-cell.empty { visibility: hidden; cursor: default; }
+.acal-month-cell.weekend { background: #f8fafc; color: #94a3b8; }
+/* Same colors as .acal-day-row's border-left — see that rule above. */
+.acal-month-cell.holiday-public { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+.acal-month-cell.holiday-school { background: #ffedd5; color: #9a3412; border-color: #fed7aa; }
+.acal-month-cell.working-day { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+.acal-month-cell.today { box-shadow: inset 0 0 0 2px #0f172a; }
+.acal-month-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin-top: 0.75rem;
+  font-size: 0.66rem;
+  color: #64748b;
+}
+.acal-month-legend span { display: flex; align-items: center; gap: 0.3rem; }
+.acal-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  display: inline-block;
+  font-style: normal;
+}
+.acal-legend-dot.holiday-public { background: #fee2e2; border: 1px solid #fecaca; }
+.acal-legend-dot.holiday-school { background: #ffedd5; border: 1px solid #fed7aa; }
+.acal-legend-dot.working-day { background: #dcfce7; border: 1px solid #bbf7d0; }
+.acal-legend-dot.weekend { background: #f8fafc; border: 1px solid #e2e8f0; }
+
+@media (max-width: 640px) {
+  .acal-month-preview { max-width: 100%; }
+  .acal-month-cell { height: 34px; font-size: 0.68rem; }
+}

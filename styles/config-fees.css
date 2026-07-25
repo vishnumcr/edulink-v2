@@ -1,0 +1,745 @@
+/* ------------------------------------------------------------------
+ * styles/config-fees.css
+ *
+ * Backs the fee structure config page (app/(dashboard)/settings/fees).
+ * Scoped under `.fs` — do not reuse these class names elsewhere.
+ * ------------------------------------------------------------------ */
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.fs {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  font-family: system-ui, -apple-system, sans-serif;
+  padding-bottom: 4rem;
+}
+
+/* Header */
+.fs-header-crumb {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.fs-header-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-top: 0.2rem;
+}
+.fs-header-sub {
+  font-size: 0.78rem;
+  color: #64748b;
+  margin-top: 0.15rem;
+}
+.fs-school-chip {
+  display: inline-block;
+  margin-top: 0.4rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 0.15rem 0.5rem;
+  border-radius: 5px;
+}
+
+/* Summary strip */
+.fs-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+.fs-strip-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: #fff;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+}
+.fs-strip-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.fs-strip-val {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.fs-strip-sub {
+  font-size: 0.65rem;
+  color: #94a3b8;
+}
+
+/* Schedule bar */
+.fs-schedule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  background: #fff;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  padding: 0.65rem 0.9rem;
+}
+.fs-schedule-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.fs-select {
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  padding: 0 0.5rem;
+  font-size: 0.75rem;
+  color: #1e293b;
+  font-family: inherit;
+}
+
+/* Tabs */
+.fs-tabs {
+  display: flex;
+  gap: 0.4rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+.fs-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  position: relative;
+  background: none;
+  border: none;
+  padding: 0.55rem 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #94a3b8;
+  cursor: pointer;
+}
+.fs-tab-btn.on {
+  color: #0f172a;
+}
+.fs-tab-pip {
+  display: none;
+}
+.fs-tab-btn.on::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--ac, #2563eb);
+  border-radius: 2px;
+}
+
+/* Body / cards */
+.fs-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.fs-sec-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.fs-sec-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.fs-sec-sub {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  margin-top: 0.15rem;
+}
+.fs-card {
+  background: #fff;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  padding: 0.5rem;
+}
+
+/* Table */
+.fs-tbl {
+  width: 100%;
+  border-collapse: collapse;
+}
+.fs-tbl th {
+  text-align: left;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+.fs-tbl td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid #f8fafc;
+  vertical-align: middle;
+}
+.fs-tbl tr:last-child td {
+  border-bottom: none;
+}
+
+/* Chips / pills */
+.fs-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 0.4rem;
+  border-radius: 7px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.fs-chip-green {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.fs-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+.pill-blue   { background: #eff6ff; color: #2563eb; }
+.pill-green  { background: #f0fdf4; color: #16a34a; }
+.pill-gray   { background: #f1f5f9; color: #64748b; }
+.pill-amber  { background: #fffbeb; color: #d97706; }
+.pill-purple { background: #f5f3ff; color: #7c3aed; }
+
+/* Amount inputs */
+.fs-amt-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: fit-content;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  padding: 0 0.4rem;
+  background: #fff;
+}
+.fs-amt-prefix {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2563eb;
+  background: #eff6ff;
+  border-radius: 5px;
+  width: 22px;
+  height: 22px;
+}
+.fs-amt-input {
+  border: none;
+  outline: none;
+  width: 110px;
+  height: 32px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #0f172a;
+  font-family: inherit;
+}
+.fs-note-input {
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  height: 32px;
+  padding: 0 0.6rem;
+  font-size: 0.78rem;
+  width: 100%;
+  max-width: 280px;
+  font-family: inherit;
+}
+
+/* Empty state */
+.fs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.3rem;
+  padding: 2.25rem 1rem;
+  color: #94a3b8;
+}
+.fs-empty-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #f1f5f9;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.4rem;
+}
+.fs-empty h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #334155;
+}
+.fs-empty p {
+  font-size: 0.75rem;
+  max-width: 320px;
+}
+
+/* Misc grid/cards */
+.fs-misc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+.fs-misc-card {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  overflow: hidden;
+  animation: fs-fade-in 0.2s ease both;
+}
+.fs-misc-card.off {
+  opacity: 0.55;
+}
+@keyframes fs-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fs-misc-body {
+  padding: 0.85rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.fs-misc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.fs-misc-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: #f5f3ff;
+  color: #7c3aed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.fs-misc-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.fs-icon-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: #f8fafc;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.fs-icon-btn.del:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+.fs-misc-amount {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.fs-misc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.fs-misc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.9rem;
+  border-top: 1px solid #f8fafc;
+  background: #fafafa;
+}
+.fs-misc-status {
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+.fs-misc-status.on  { color: #16a34a; }
+.fs-misc-status.off { color: #94a3b8; }
+
+.fs-toggle {
+  width: 32px;
+  height: 18px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  background: #e2e8f0;
+  transition: background 0.15s;
+}
+.fs-toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.fs-toggle.on {
+  background: #16a34a;
+}
+.fs-toggle.on::after {
+  transform: translateX(14px);
+}
+
+/* Admission fee — deliberately more visually prominent than the
+   muted schedule bar above it: this represents real money charged to
+   parents and needs to actually be noticed, not blend into a
+   background config control. */
+.fs-admission-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  background: #fff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1rem 1.15rem;
+  transition: border-color 0.15s, background 0.15s;
+}
+.fs-admission-card.on {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+.fs-admission-main {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.fs-admission-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.fs-admission-desc {
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: #64748b;
+  max-width: 34rem;
+}
+.fs-admission-amount {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: #fff;
+  border: 1.5px solid #16a34a;
+  border-radius: 8px;
+  padding: 0.4rem 0.7rem;
+}
+.fs-amount-prefix {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #16a34a;
+}
+.fs-admission-amount input {
+  width: 110px;
+  border: none;
+  outline: none;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+  font-family: inherit;
+}
+
+.fs-add-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1.5px dashed #e2e8f0;
+  border-radius: 10px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 120px;
+}
+.fs-add-card:hover {
+  border-color: #cbd5e1;
+  color: #64748b;
+}
+.fs-add-ring {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1.5px dashed #cbd5e1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Floating save bar */
+.fs-save-bar {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: #0f172a;
+  color: #fff;
+  padding: 0.55rem 0.6rem 0.55rem 0.9rem;
+  border-radius: 999px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.25);
+  font-size: 0.78rem;
+  font-weight: 600;
+  z-index: 40;
+}
+.fs-save-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fbbf24;
+}
+
+/* Buttons */
+.fs-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.fs-btn-dark {
+  background: #0f172a;
+  color: #fff;
+}
+.fs-btn-ghost {
+  background: #f1f5f9;
+  color: #334155;
+}
+.fs-btn-success {
+  background: #16a34a;
+  color: #fff;
+}
+.fs-btn-sm {
+  padding: 0.4rem 0.7rem;
+  font-size: 0.72rem;
+  border-radius: 999px;
+}
+.fs-pulsing {
+  opacity: 0.85;
+}
+
+/* Modal */
+.fs-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 1rem;
+}
+.fs-modal {
+  background: #fff;
+  border-radius: 14px;
+  padding: 1.1rem;
+  width: 100%;
+  max-width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.fs-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.fs-modal-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.fs-modal-sub {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  margin-top: 0.15rem;
+}
+.fs-modal-x {
+  border: none;
+  background: #f1f5f9;
+  color: #64748b;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.fs-merror {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: #dc2626;
+  background: #fef2f2;
+  border-radius: 7px;
+  padding: 0.45rem 0.6rem;
+  margin-bottom: 0.6rem;
+}
+.fs-field {
+  margin-bottom: 0.75rem;
+}
+.fs-label {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 0.3rem;
+}
+.fs-minput-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0 0.6rem;
+  color: #94a3b8;
+}
+.fs-minput {
+  border: none;
+  outline: none;
+  height: 38px;
+  font-size: 0.82rem;
+  color: #0f172a;
+  width: 100%;
+  font-family: inherit;
+}
+.fs-mselect {
+  width: 100%;
+  height: 38px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0 0.6rem;
+  font-size: 0.82rem;
+  color: #0f172a;
+  background: #fff;
+  font-family: inherit;
+}
+.fs-radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.fs-radio {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  background: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+}
+.fs-radio.sel {
+  border-color: #0f172a;
+  background: #0f172a;
+  color: #fff;
+}
+.fs-radio-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.fs-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+.fs-mcancel {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #64748b;
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.fs-mconfirm {
+  border: none;
+  background: #0f172a;
+  color: #fff;
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.fs-mconfirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.fs-mconfirm-del {
+  border: none;
+  background: #dc2626;
+  color: #fff;
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}

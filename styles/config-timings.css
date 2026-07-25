@@ -1,0 +1,335 @@
+/* ------------------------------------------------------------------
+ * styles/config-timings.css
+ *
+ * Backs the Master Timings settings page
+ * (app/(dashboard)/settings/timings). Scoped under `.cfg-` (generic
+ * settings-content shell, reusable if a future settings page wants
+ * the same head/body/shimmer chrome) and `.tmg-` (this page's own
+ * slot editor/summary/timeline). Neither prefix existed anywhere
+ * else in the project before this file — defined fresh here rather
+ * than assumed to already exist elsewhere.
+ * ------------------------------------------------------------------ */
+
+@keyframes tmg-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes tmg-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes cfg-shimmer-sweep {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+
+/* ── Generic settings-content shell ─────────────────────────────── */
+.cfg-content-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.5rem 1.5rem 0;
+}
+.cfg-content-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.cfg-content-sub {
+  font-size: 0.78rem;
+  color: #64748b;
+  margin-top: 0.2rem;
+}
+.cfg-dirty-pill {
+  font-size: 0.72rem;
+  color: #d97706;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+.cfg-content-body {
+  padding: 1.25rem 1.5rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.cfg-shimmer {
+  height: 44px;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(90deg, #f1f5f9 25%, #f8fafc 37%, #f1f5f9 63%);
+  background-size: 400px 100%;
+  animation: cfg-shimmer-sweep 1.4s ease-in-out infinite;
+}
+
+/* ── Page-specific ────────────────────────────────────────────────── */
+.tmg-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+.tmg-banner svg {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.tmg-error {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #fef2f2;
+  color: #dc2626;
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.tmg-layout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 1.25rem;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .tmg-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tmg-col-heads {
+  display: grid;
+  grid-template-columns: 24px 110px 1fr 120px 120px 32px;
+  gap: 0.5rem;
+  padding: 0 0.6rem;
+  margin-bottom: 0.4rem;
+}
+.tmg-col-head {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+}
+
+.tmg-slot-row {
+  display: grid;
+  grid-template-columns: 24px 110px 1fr 120px 120px 32px;
+  align-items: center;
+  gap: 0.5rem;
+  background: #fff;
+  border: 1px solid #f1f5f9;
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.4rem;
+  animation: tmg-fade-in 0.2s ease both;
+}
+.tmg-slot-row.type-class { border-left-color: #2563eb; }
+.tmg-slot-row.type-break { border-left-color: #d97706; }
+.tmg-slot-row.type-lunch { border-left-color: #ea580c; }
+.tmg-slot-row.dragging { opacity: 0.4; }
+
+.tmg-drag {
+  color: #cbd5e1;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tmg-drag:active { cursor: grabbing; }
+
+.tmg-type-sel {
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: #fff;
+}
+.tmg-type-class { color: #2563eb; }
+.tmg-type-break { color: #d97706; }
+.tmg-type-lunch { color: #ea580c; }
+
+.tmg-input {
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.78rem;
+  color: #0f172a;
+  font-family: inherit;
+  width: 100%;
+}
+.tmg-input:focus {
+  outline: none;
+  border-color: #94a3b8;
+}
+.tmg-time-input {
+  font-family: "Geist Mono", ui-monospace, monospace;
+  color: #334155;
+}
+
+.tmg-del-btn {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem;
+  border-radius: 6px;
+}
+.tmg-del-btn:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.tmg-add-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+}
+.tmg-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px dashed #cbd5e1;
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tmg-add-class { color: #2563eb; }
+.tmg-add-break { color: #d97706; }
+.tmg-add-lunch { color: #ea580c; }
+.tmg-add-btn:hover { background: #f8fafc; }
+
+/* ── Sidebar ─────────────────────────────────────────────────────── */
+.tmg-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.tmg-summary-card {
+  background: #fff;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.tmg-summary-head {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748b;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid #f8fafc;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tmg-summary-body {
+  padding: 0.5rem 0.8rem;
+}
+.tmg-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0;
+  font-size: 0.78rem;
+}
+.tmg-summary-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #475569;
+}
+.tmg-summary-val {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.tmg-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.tmg-tl-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.72rem;
+}
+.tmg-tl-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tmg-tl-label {
+  font-weight: 600;
+  flex: 1;
+}
+.tmg-tl-time {
+  font-family: "Geist Mono", ui-monospace, monospace;
+  color: #94a3b8;
+}
+
+.tmg-save-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.tmg-save-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background: #0f172a;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.tmg-save-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.tmg-save-btn.saved {
+  background: #16a34a;
+}
+.tmg-reset-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.3rem;
+}
+.tmg-reset-btn:hover {
+  color: #64748b;
+}
+.tmg-dirty-notice {
+  text-align: center;
+  font-size: 0.7rem;
+  color: #d97706;
+  font-weight: 600;
+}

@@ -1,0 +1,168 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&display=swap');
+
+.gen-root { font-family:'Geist',sans-serif; background:#F8FAFF; min-height:100%; }
+
+/* ── Sticky header ── */
+.gen-head {
+  padding:1.25rem 2rem; border-bottom:1px solid #F1F5F9; background:#FFF;
+  display:flex; align-items:center; justify-content:space-between;
+  gap:1rem; flex-wrap:wrap; position:sticky; top:0; z-index:10;
+}
+.gen-head-title { font-family:'Instrument Serif',serif; font-size:1.25rem; color:#0F172A; }
+.gen-head-sub   { font-size:0.72rem; color:#94A3B8; margin-top:2px; }
+.gen-head-actions { display:flex; align-items:center; gap:0.85rem; }
+
+.gen-unsaved-tag { display:inline-flex; align-items:center; gap:0.4rem; font-size:0.72rem; font-weight:600; color:#94A3B8; }
+.gen-unsaved-dot {
+  width:6px; height:6px; border-radius:50%; background:#F59E0B;
+  box-shadow:0 0 0 3px rgba(245,158,11,0.15);
+}
+
+.gen-save-btn {
+  display:inline-flex; align-items:center; gap:0.4rem;
+  padding:0.55rem 1.25rem; border-radius:10px; border:none; cursor:pointer;
+  font-family:'Geist',sans-serif; font-size:0.78rem; font-weight:600;
+  transition:background 0.15s, color 0.15s;
+}
+.gen-save-btn.idle    { background:#0F172A; color:#FFF; }
+.gen-save-btn.idle:hover { background:#4F46E5; }
+.gen-save-btn.saved   { background:#DCFCE7; color:#16A34A; cursor:default; }
+.gen-save-btn.disabled { background:#F1F5F9; color:#94A3B8; cursor:not-allowed; }
+
+/* ── Spin ── */
+.gen-spin { animation: gen-spin 1s linear infinite; }
+@keyframes gen-spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+
+/* ── Body ── */
+.gen-body { padding:2rem; display:flex; flex-direction:column; gap:1.5rem; max-width:860px; }
+
+/* ── Card ── */
+.gen-card {
+  background:#FFF; border-radius:18px; border:1.5px solid #F1F5F9;
+  box-shadow:0 2px 12px rgba(15,23,42,0.05); overflow:hidden;
+}
+.gen-card-head {
+  padding:1rem 1.5rem; border-bottom:1px solid #F8FAFC;
+  display:flex; align-items:center; gap:0.6rem;
+}
+.gen-card-head-icon {
+  width:32px; height:32px; border-radius:8px; background:#EEF2FF;
+  display:flex; align-items:center; justify-content:center; color:#6366F1; flex-shrink:0;
+}
+.gen-card-head-label { font-size:0.85rem; font-weight:700; color:#0F172A; }
+.gen-card-body { padding:1.5rem; display:flex; flex-direction:column; gap:1rem; }
+
+/* ── Field grid ── */
+.gen-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+.gen-grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; }
+@media(max-width:640px) {
+  .gen-grid-2, .gen-grid-3 { grid-template-columns:1fr; }
+}
+
+/* ── Field ── */
+.gen-field { display:flex; flex-direction:column; gap:0.35rem; }
+.gen-label {
+  font-size:0.62rem; font-weight:800; letter-spacing:0.09em;
+  text-transform:uppercase; color:#94A3B8;
+}
+.gen-input-wrap { position:relative; }
+.gen-input-icon {
+  position:absolute; left:10px; top:50%; transform:translateY(-50%);
+  color:#CBD5E1; pointer-events:none;
+}
+.gen-input {
+  width:100%; background:#F8FAFC; border:1.5px solid #F1F5F9;
+  border-radius:10px; padding:0.65rem 0.9rem;
+  font-family:'Geist',sans-serif; font-size:0.85rem; font-weight:500;
+  color:#0F172A; outline:none; transition:border-color 0.15s, box-shadow 0.15s;
+  box-sizing:border-box;
+}
+.gen-input.with-icon { padding-left:2.2rem; }
+.gen-input.with-lock { padding-right:2.2rem; }
+.gen-input:hover:not([readonly]) { border-color:#E2E8F0; }
+.gen-input:focus { border-color:#6366F1; box-shadow:0 0 0 3px rgba(99,102,241,0.1); }
+.gen-input[readonly] { color:#64748B; background:#FAFAFA; cursor:default; }
+
+.gen-input-lock {
+  position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#CBD5E1;
+  pointer-events:none;
+}
+.gen-field-hint { font-size:0.68rem; color:#94A3B8; }
+
+/* ── Logo: empty-state dropzone ── */
+.gen-logo-dropzone {
+  width:100%; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:0.5rem; padding:2rem 1.5rem; border-radius:16px;
+  border:1.5px dashed #E2E8F0; background:#FAFBFF; cursor:pointer;
+  font-family:'Geist',sans-serif; text-align:center; transition:border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.gen-logo-dropzone:hover:not(:disabled) { border-color:#A5B4FC; background:#EEF2FF; }
+.gen-logo-dropzone.drag-active {
+  border-color:#6366F1; background:#EEF2FF; box-shadow:0 0 0 4px rgba(99,102,241,0.08);
+}
+.gen-logo-dropzone:disabled { cursor:not-allowed; opacity:0.7; }
+.gen-logo-dropzone-icon {
+  width:40px; height:40px; border-radius:10px; background:#EEF2FF; color:#6366F1;
+  display:flex; align-items:center; justify-content:center;
+}
+.gen-logo-dropzone-title { font-size:0.8rem; font-weight:600; color:#334155; }
+
+/* ── Logo: filled state ── */
+.gen-logo-filled-row { display:flex; align-items:center; gap:1.25rem; flex-wrap:wrap; }
+.gen-logo-tile {
+  width:88px; height:88px; border-radius:16px; border:1.5px solid #F1F5F9;
+  background:#F8FAFC; padding:0; overflow:hidden; position:relative; cursor:pointer;
+  flex-shrink:0; transition:border-color 0.15s, box-shadow 0.15s;
+}
+.gen-logo-tile:hover:not(:disabled) { border-color:#C7D2FE; box-shadow:0 0 0 4px rgba(99,102,241,0.08); }
+.gen-logo-tile:disabled { cursor:not-allowed; }
+.gen-logo-tile img { width:100%; height:100%; object-fit:contain; display:block; }
+.gen-logo-tile-overlay {
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  background:rgba(15,23,42,0.45); color:#FFF; opacity:0; transition:opacity 0.15s;
+}
+.gen-logo-tile:hover .gen-logo-tile-overlay { opacity:1; }
+.gen-logo-tile-mask {
+  position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:0.25rem; background:rgba(255,255,255,0.92); color:#6366F1; font-size:0.68rem; font-weight:700;
+}
+.gen-logo-filled-meta { display:flex; flex-direction:column; align-items:flex-start; gap:0.3rem; }
+.gen-logo-change-link {
+  background:none; border:none; padding:0; cursor:pointer;
+  font-family:'Geist',sans-serif; font-size:0.78rem; font-weight:700; color:#6366F1;
+}
+.gen-logo-change-link:hover:not(:disabled) { color:#4F46E5; text-decoration:underline; }
+.gen-logo-change-link:disabled { color:#94A3B8; cursor:not-allowed; }
+
+.gen-logo-hint { font-size:0.7rem; color:#94A3B8; }
+.gen-progress-bar {
+  height:4px; border-radius:99px; background:#E2E8F0; margin-top:0.4rem; width:160px;
+}
+.gen-progress-fill { height:100%; border-radius:99px; background:#6366F1; transition:width 0.2s; }
+
+/* ── Read-only pills ── */
+.gen-pill-row { display:flex; gap:0.75rem; flex-wrap:wrap; }
+.gen-pill {
+  display:flex; flex-direction:column; gap:0.2rem;
+  background:#F8FAFC; border:1.5px solid #F1F5F9; border-radius:10px;
+  padding:0.6rem 1rem; min-width:120px;
+}
+.gen-pill-label { font-size:0.6rem; font-weight:800; letter-spacing:0.09em; text-transform:uppercase; color:#94A3B8; }
+.gen-pill-value { font-size:0.85rem; font-weight:700; color:#0F172A; }
+.gen-pill-value.active  { color:#16A34A; }
+.gen-pill-value.basic   { color:#6366F1; }
+
+/* ── Error banner ── */
+.gen-error {
+  display:flex; align-items:center; gap:0.5rem;
+  background:#FEF2F2; border:1.5px solid #FECACA; border-radius:10px;
+  padding:0.7rem 1rem; color:#DC2626; font-size:0.78rem; font-weight:600;
+  margin:0 2rem;
+}
+.gen-error-text { flex:1; }
+.gen-error-dismiss {
+  display:flex; align-items:center; justify-content:center;
+  background:none; border:none; color:#DC2626; cursor:pointer;
+  padding:3px; border-radius:6px; transition:background 0.15s; flex-shrink:0;
+}
+.gen-error-dismiss:hover { background:rgba(220,38,38,0.12); }
