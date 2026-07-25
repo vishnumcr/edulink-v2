@@ -15,12 +15,32 @@ export interface ClassTeacherAssignment {
   schoolId: string;
   classId: string;
   className: string;
-  sectionId: string;
-  sectionName: string;
+  /**
+   * Absent means this teacher is class teacher of the WHOLE class
+   * directly (a class with no sections at all — e.g. a school that
+   * doesn't split Class 2 into sections). Present means the usual
+   * per-section assignment. See settings/academic/page.tsx: a class
+   * can be assigned a teacher either way, never both at once.
+   */
+  sectionId?: string;
+  sectionName?: string;
 }
 
 export interface Teacher {
   id: string;
+  /**
+   * The Firebase Auth uid this teacher can sign into the Android app
+   * with — set by the createTeacher Cloud Function, which mints the
+   * Auth account FIRST and uses that same uid as this document's own
+   * ID (see that function's header for why there's no separate id to
+   * keep in sync). Optional because it's only present on teachers
+   * created through that flow: a teacher added before this feature
+   * existed has an arbitrary legacy doc ID here instead, and no Auth
+   * account at all. Treat the FIELD's absence — not just checking
+   * `id` — as the real signal for "this teacher has no login yet";
+   * don't assume `id` doubles as a uid for older documents.
+   */
+  uid?: string;
   name: string;
   email: string;
   phone: string;

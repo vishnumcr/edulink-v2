@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/AuthContext';
+import { studentsService } from '@/services/students/studentsService';
+import { Student } from '@/types/students';
+import { NO_SECTION_ID } from '@/lib/utils';
 import {
   collection, onSnapshot, query, orderBy,
-  doc, updateDoc, addDoc, deleteDoc, serverTimestamp, writeBatch,
+  doc, updateDoc, addDoc, serverTimestamp, writeBatch,
 } from 'firebase/firestore';
 import {
   Users, Plus, ArrowRight, Loader2, UserCheck, X, Hash,
@@ -20,7 +23,6 @@ import '@/styles/config-academic.css';
 interface Section {
   id: string;
   name: string;
-  studentCount?: number;
   /** Real teacher document id — the source of truth. classTeacherName
    * is a denormalized display copy, kept in sync by handleAssignTeacher
    * below; never edited independently of classTeacherId. */
@@ -34,12 +36,33 @@ interface ClassGroup {
   className: string;
   sections: Section[];
   orderIndex?: number;
+  /**
+   * Class-level class-teacher assignment — only meaningful (and only
+   * ever shown/editable) when sections.length === 0. A class either
+   * has a teacher per section, or one teacher for the whole class
+   * directly — never both. See handleAssignClassLevelTeacher.
+   */
+  classTeacherId?: string | null;
+  classTeacherName?: string;
 }
 
 interface Teacher {
   id: string;
   name: string;
-  classTeacherOf?: { classId: string; className: string; sectionId: string; sectionName: string } | null;
+  classTeacherOf?: { classId: string; className: string; sectionId?: string; sectionName?: string } | null;
+}
+
+/**
+ * "6-A" for a section-level assignment, "6" for a class-level one
+ * (no sectionName) — classTeacherOf.sectionName is optional now that
+ * a teacher can be class teacher of a whole class with no sections,
+ * so every place that renders this needs to handle its absence
+ * instead of interpolating `undefined` into the string.
+ */
+function formatClassTeacherOf(assignment: NonNullable<Teacher['classTeacherOf']>): string {
+  return assignment.sectionName
+    ? `${assignment.className}-${assignment.sectionName}`
+    : assignment.className;
 }
 
 // ── Accent palette ─────────────────────────────────────────────────────────
@@ -95,6 +118,43 @@ export default function AcademicManagementPage() {
   const [deleteClassId, setDeleteClassId]= useState<string | null>(null);
   const [deleteSec,     setDeleteSec]    = useState<{ classId: string; secId: string; secName: string } | null>(null);
 
+  // ── Student counts (from the shared IndexedDB cache — same one the
+  // Students admin page uses via studentsService.syncStudents, so this
+  // is a cheap delta-sync against Firestore, not a fresh full read
+  // every time this page loads) ────────────────────────────────────────
+  const [students, setStudents] = useState<Student[]>([]);
+  useEffect(() => {
+    if (!profile?.schoolId) return;
+    studentsService.syncStudents(profile.schoolId).then(setStudents).catch(console.error);
+  }, [profile?.schoolId]);
+
+  // classId_sectionId -> count, falling back to className_section
+  // labels for any student written before the classId/sectionId
+  // backfill — see collectAdmissionFee.ts's resolution fix. Prefers
+  // the real IDs when present since they're immune to a class/section
+  // rename that a label match would silently miss.
+  const countsByKey = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of students) {
+      const key = s.classId && s.sectionId
+        ? `${s.classId}_${s.sectionId}`
+        : `label:${s.className}_${s.section ?? NO_SECTION_ID}`;
+      map.set(key, (map.get(key) ?? 0) + 1);
+    }
+    return map;
+  }, [students]);
+
+  function countForSection(cls: ClassGroup, sec: Section): number {
+    return countsByKey.get(`${cls.id}_${sec.id}`)
+      ?? countsByKey.get(`label:${cls.className}_${sec.name}`)
+      ?? 0;
+  }
+
+  /** For a class with NO sections — every student in that class counts, regardless of a stray section value. */
+  function countForClass(cls: ClassGroup): number {
+    return students.filter(s => (s.classId ? s.classId === cls.id : s.className === cls.className)).length;
+  }
+
   // ── Firestore ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (authLoading || !profile?.schoolId) return;
@@ -148,11 +208,26 @@ export default function AcademicManagementPage() {
       console.error('School is not selected.');
       return;
     }
+    const target = classes.find(c => c.id === classId);
     setIsProcessing(true);
     try {
-      await deleteDoc(doc(db, 'schools', schoolId, 'classes', classId));
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'schools', schoolId, 'classes', classId));
+      // Deleting a class must release every teacher reference it holds
+      // — its own class-level assignment AND every section's — or
+      // those teachers' classTeacherOf silently keeps pointing at a
+      // class that no longer exists.
+      if (target?.classTeacherId) {
+        batch.update(doc(db, 'schools', schoolId, 'teachers', target.classTeacherId), { classTeacherOf: null });
+      }
+      for (const sec of target?.sections ?? []) {
+        if (sec.classTeacherId) {
+          batch.update(doc(db, 'schools', schoolId, 'teachers', sec.classTeacherId), { classTeacherOf: null });
+        }
+      }
+      await batch.commit();
       if (expandedId === classId) setExpandedId(null);
-      if (selectedClass === classes.find(c => c.id === classId)?.className) setSelectedClass(null);
+      if (selectedClass === target?.className) setSelectedClass(null);
     } catch (e) { console.error(e); }
     finally { setIsProcessing(false); setDeleteClassId(null); }
   }
@@ -162,6 +237,55 @@ export default function AcademicManagementPage() {
     setSecTargetId(classDocId);
     setNewSecName(''); setNewSecRoom(''); setNewSecTeacher(''); setSecError('');
     setSecModal(true);
+  }
+
+  /**
+   * A teacher can be class-teacher of at most ONE thing at a time —
+   * either one section, or (for a class with no sections at all) one
+   * whole class directly, never both, never two. This is the single
+   * place that invariant is enforced: given who's about to be newly
+   * assigned and where, it finds every OTHER place (any class's
+   * class-level slot, any class's any section) that currently lists
+   * them and clears it.
+   *
+   * Returns per-class field patches rather than writing directly, so
+   * callers can merge in their OWN target update for the same class
+   * before writing — Firestore batches don't merge multiple writes to
+   * the same document field, so if the class being newly assigned is
+   * ALSO a class this function needs to clear something from (e.g.
+   * reassigning a teacher from Class 2's whole-class slot to a section
+   * within Class 2 itself), both changes have to land in one combined
+   * write, not two competing ones.
+   */
+  function clearTeacherElsewhere(
+    teacherId: string,
+    exceptClassId: string,
+    exceptSectionId: string | null, // null = the exception is the class-level slot, not a section
+  ): Map<string, { sections?: Section[]; classTeacherId?: null; classTeacherName?: string }> {
+    const patches = new Map<string, { sections?: Section[]; classTeacherId?: null; classTeacherName?: string }>();
+    for (const cls of classes) {
+      const patch: { sections?: Section[]; classTeacherId?: null; classTeacherName?: string } = {};
+      let touched = false;
+
+      if (cls.classTeacherId === teacherId && !(cls.id === exceptClassId && exceptSectionId === null)) {
+        patch.classTeacherId = null;
+        patch.classTeacherName = 'Not Assigned';
+        touched = true;
+      }
+
+      const updatedSections = cls.sections.map(s =>
+        s.classTeacherId === teacherId && !(cls.id === exceptClassId && s.id === exceptSectionId)
+          ? { ...s, classTeacherId: null, classTeacherName: 'Not Assigned' }
+          : s
+      );
+      if (updatedSections.some((s, i) => s !== cls.sections[i])) {
+        patch.sections = updatedSections;
+        touched = true;
+      }
+
+      if (touched) patches.set(cls.id, patch);
+    }
+    return patches;
   }
 
   async function handleAddSection() {
@@ -178,35 +302,30 @@ export default function AcademicManagementPage() {
       const preselectedTeacher = newSecTeacher ? teachers.find(t => t.id === newSecTeacher) ?? null : null;
       const newSecId = crypto.randomUUID();
       const newSec: Section = {
-        id: newSecId, name: trimmed, studentCount: 0,
+        id: newSecId, name: trimmed,
         classTeacherId: preselectedTeacher?.id ?? null,
         classTeacherName: preselectedTeacher?.name ?? 'Not Assigned',
         roomNo: newSecRoom.trim() || 'TBD',
       };
 
+      // A brand-new section doesn't exist in `classes` yet, so there's
+      // no "exceptSectionId" to protect — clear the preselected teacher
+      // from anywhere else entirely, then separately append the new
+      // section to whatever this class's patch (if any) ends up being.
+      const patches = preselectedTeacher
+        ? clearTeacherElsewhere(preselectedTeacher.id, '__new-section__', null)
+        : new Map<string, { sections?: Section[] }>();
+
       const batch = writeBatch(db);
-
-      // A teacher can only be class-teacher of ONE section — if they're
-      // pre-selected here, clear whichever other section (in any class)
-      // currently lists them, in the SAME batch as adding this section,
-      // so the two writes can't race or leave a stale double-assignment.
-      if (preselectedTeacher) {
-        for (const cls of classes) {
-          const updatedSecs = cls.sections.map(s =>
-            s.classTeacherId === preselectedTeacher.id
-              ? { ...s, classTeacherId: null, classTeacherName: 'Not Assigned' }
-              : s
-          );
-          if (updatedSecs.some((s, i) => s !== cls.sections[i])) {
-            batch.update(doc(db, 'schools', schoolId, 'classes', cls.id), {
-              sections: updatedSecs, updatedAt: serverTimestamp(),
-            });
-          }
-        }
+      for (const [classId, patch] of patches) {
+        if (classId === target.id) continue; // merged into the target write below
+        batch.update(doc(db, 'schools', schoolId, 'classes', classId), { ...patch, updatedAt: serverTimestamp() });
       }
-
+      const targetPatch = patches.get(target.id);
       batch.set(doc(db, 'schools', schoolId, 'classes', target.id), {
-        sections: [...target.sections, newSec], updatedAt: serverTimestamp(),
+        ...targetPatch,
+        sections: [...(targetPatch?.sections ?? target.sections), newSec],
+        updatedAt: serverTimestamp(),
       }, { merge: true });
 
       if (preselectedTeacher) {
@@ -261,12 +380,10 @@ export default function AcademicManagementPage() {
    * and teachers/{teacherId}.classTeacherOf is the reverse reference —
    * see types/teachers.ts's ClassTeacherAssignment.
    *
-   * A teacher can only be class-teacher of ONE section at a time, so
-   * assigning them here also clears whichever other section (in any
-   * class) previously listed them. Every affected class document is
-   * collapsed into a single final `sections` array before writing —
-   * writing twice to the same document's `sections` field in one batch
-   * would just have the second write silently overwrite the first.
+   * Uses the shared clearTeacherElsewhere so this stays consistent with
+   * handleAssignClassLevelTeacher below — a section assignment here now
+   * also clears a class-level (no-section) assignment elsewhere, and
+   * vice versa, not just other sections.
    */
   async function handleAssignTeacher(classDocId: string, sectionId: string, teacherId: string) {
     if (!profile?.schoolId) return;
@@ -282,33 +399,21 @@ export default function AcademicManagementPage() {
 
     setIsProcessing(true);
     try {
-      // One entry per affected class, built up cumulatively so each
-      // class document gets exactly one write.
-      const classUpdates = new Map<string, Section[]>();
-      const sectionsFor = (cls: ClassGroup) => classUpdates.get(cls.id) ?? [...cls.sections];
+      const patches = newTeacher
+        ? clearTeacherElsewhere(newTeacher.id, classDocId, sectionId)
+        : new Map<string, { sections?: Section[]; classTeacherId?: null; classTeacherName?: string }>();
 
-      if (newTeacher) {
-        for (const cls of classes) {
-          const secs = sectionsFor(cls);
-          const updated = secs.map(s =>
-            s.classTeacherId === newTeacher.id && !(cls.id === classDocId && s.id === sectionId)
-              ? { ...s, classTeacherId: null, classTeacherName: 'Not Assigned' }
-              : s
-          );
-          if (updated.some((s, i) => s !== secs[i])) classUpdates.set(cls.id, updated);
-        }
-      }
-
-      const targetSecs = sectionsFor(target).map(s =>
+      const targetPatch = patches.get(classDocId) ?? {};
+      const targetSections = (targetPatch.sections ?? target.sections).map(s =>
         s.id === sectionId
           ? { ...s, classTeacherId: newTeacher?.id ?? null, classTeacherName: newTeacher?.name ?? 'Not Assigned' }
           : s
       );
-      classUpdates.set(target.id, targetSecs);
+      patches.set(classDocId, { ...targetPatch, sections: targetSections });
 
       const batch = writeBatch(db);
-      for (const [classId, sections] of classUpdates) {
-        batch.update(doc(db, 'schools', schoolId, 'classes', classId), { sections, updatedAt: serverTimestamp() });
+      for (const [classId, patch] of patches) {
+        batch.update(doc(db, 'schools', schoolId, 'classes', classId), { ...patch, updatedAt: serverTimestamp() });
       }
       if (previousTeacherId && previousTeacherId !== (newTeacher?.id ?? null)) {
         batch.update(doc(db, 'schools', schoolId, 'teachers', previousTeacherId), { classTeacherOf: null });
@@ -326,12 +431,60 @@ export default function AcademicManagementPage() {
     finally { setIsProcessing(false); }
   }
 
+  /**
+   * Same idea as handleAssignTeacher, but for a class with ZERO
+   * sections — classTeacherId/classTeacherName live directly on the
+   * class document instead of inside a section. See ClassGroup and
+   * the Option B note in ClassTeacherAssignment (types/teachers.ts):
+   * a class is assigned a teacher either per-section or directly,
+   * never both, so this only ever applies while sections.length === 0.
+   */
+  async function handleAssignClassLevelTeacher(classDocId: string, teacherId: string) {
+    if (!profile?.schoolId) return;
+    const schoolId = profile.schoolId;
+    const target = classes.find(c => c.id === classDocId);
+    if (!target) return;
+
+    const isUnassigning = !teacherId || teacherId === 'Not Assigned';
+    const newTeacher = isUnassigning ? null : teachers.find(t => t.id === teacherId) ?? null;
+    const previousTeacherId = target.classTeacherId ?? null;
+
+    setIsProcessing(true);
+    try {
+      const patches = newTeacher
+        ? clearTeacherElsewhere(newTeacher.id, classDocId, null)
+        : new Map<string, { sections?: Section[]; classTeacherId?: null; classTeacherName?: string }>();
+
+      const targetPatch = patches.get(classDocId) ?? {};
+      patches.set(classDocId, {
+        ...targetPatch,
+        classTeacherId: newTeacher?.id ?? null,
+        classTeacherName: newTeacher?.name ?? 'Not Assigned',
+      } as { sections?: Section[]; classTeacherId?: null; classTeacherName?: string });
+
+      const batch = writeBatch(db);
+      for (const [classId, patch] of patches) {
+        batch.update(doc(db, 'schools', schoolId, 'classes', classId), { ...patch, updatedAt: serverTimestamp() });
+      }
+      if (previousTeacherId && previousTeacherId !== (newTeacher?.id ?? null)) {
+        batch.update(doc(db, 'schools', schoolId, 'teachers', previousTeacherId), { classTeacherOf: null });
+      }
+      if (newTeacher) {
+        batch.update(doc(db, 'schools', schoolId, 'teachers', newTeacher.id), {
+          classTeacherOf: { schoolId, classId: target.id, className: target.className },
+        });
+      }
+      await batch.commit();
+    } catch (e) { console.error(e); }
+    finally { setIsProcessing(false); }
+  }
+
   // ── Derived ────────────────────────────────────────────────────────────────
   const sorted       = [...classes].sort((a, b) => {
     const an = parseInt(a.className, 10), bn = parseInt(b.className, 10);
     return (!isNaN(an) && !isNaN(bn)) ? an - bn : a.className.localeCompare(b.className);
   });
-  const allStudents  = classes.reduce((t, c) => t + c.sections.reduce((s, sec) => s + (sec.studentCount || 0), 0), 0);
+  const allStudents  = students.length;
   const allSections  = classes.reduce((t, c) => t + c.sections.length, 0);
   const configured   = classes.filter(c => c.sections?.length > 0).length;
   const activeGroup  = classes.find(c => c.className === selectedClass);
@@ -477,9 +630,7 @@ export default function AcademicManagementPage() {
                                   <div className="am-sec-row-left">
                                     <div className="am-sec-dot" style={{ background: color }}/>
                                     <span className="am-sec-name">Section {sec.name}</span>
-                                    {sec.studentCount !== undefined && (
-                                      <span className="am-sec-count">{sec.studentCount} students</span>
-                                    )}
+                                    <span className="am-sec-count">{countForSection(cls, sec)} students</span>
                                   </div>
                                   <button className="am-sec-del" title="Delete section"
                                     onClick={() => setDeleteSec({ classId: cls.id, secId: sec.id, secName: sec.name })}>
@@ -487,7 +638,25 @@ export default function AcademicManagementPage() {
                                   </button>
                                 </div>
                               )) : (
-                                <div className="am-no-sections">No sections yet</div>
+                                <div className="am-no-sections-row">
+                                  <div className="am-no-sections">No sections yet</div>
+                                  <select
+                                    className={`am-teacher-sel am-teacher-sel-compact${!cls.classTeacherId ? ' am-teacher-unset' : ''}`}
+                                    value={cls.classTeacherId || 'Not Assigned'}
+                                    disabled={isProcessing}
+                                    onClick={e => e.stopPropagation()}
+                                    onChange={e => handleAssignClassLevelTeacher(cls.id, e.target.value)}>
+                                    <option value="Not Assigned">— Assign class teacher</option>
+                                    {teachers.map(t => (
+                                      <option key={t.id} value={t.id}>
+                                        {t.name}
+                                        {t.classTeacherOf && t.classTeacherOf.classId !== cls.id
+                                          ? ` (currently ${formatClassTeacherOf(t.classTeacherOf)})`
+                                          : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
                               )}
                             </div>
                             <button className="am-btn am-btn-outline am-btn-sm"
@@ -567,7 +736,7 @@ export default function AcademicManagementPage() {
               <div className="am-summary">
                 {[
                   { icon:<BarChart3 size={13}/>, label:'Sections',  val: activeGroup?.sections.length ?? 0,           sub:`in Class ${selectedClass}` },
-                  { icon:<Users size={13}/>,     label:'Students',  val: activeGroup?.sections.reduce((t,s)=>t+(s.studentCount||0),0) ?? 0, sub:'current total' },
+                  { icon:<Users size={13}/>,     label:'Students',  val: activeGroup ? (activeGroup.sections.length > 0 ? activeGroup.sections.reduce((t,s)=>t+countForSection(activeGroup,s),0) : countForClass(activeGroup)) : 0, sub:'current total' },
                   { icon:<UserCheck size={13}/>, label:'Assigned',  val: activeGroup?.sections.filter(s=>!!s.classTeacherId).length ?? 0, sub:'teachers set' },
                 ].map(s => (
                   <div className="am-summary-card" key={s.label}>
@@ -621,11 +790,35 @@ export default function AcademicManagementPage() {
                     {filteredSecs.length === 0 ? (
                       <tr>
                         <td colSpan={6}>
-                          <div className="am-empty">
-                            <div className="am-empty-icon"><Plus size={20}/></div>
-                            <h3>{search ? 'No matching sections' : 'No sections defined'}</h3>
-                            <p>{search ? 'Adjust your search terms' : 'Add sections to start managing this class'}</p>
-                          </div>
+                          {!search && activeGroup && activeGroup.sections.length === 0 ? (
+                            <div className="am-empty">
+                              <div className="am-empty-icon"><UserCheck size={20}/></div>
+                              <h3>No sections — assign a class teacher directly</h3>
+                              <p>This class has no sections, so one teacher covers the whole class instead of one per section.</p>
+                              <select
+                                className={`am-teacher-sel${!activeGroup.classTeacherId ? ' am-teacher-unset' : ''}`}
+                                style={{ marginTop: '0.75rem', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '0.4rem 0.75rem' }}
+                                value={activeGroup.classTeacherId || 'Not Assigned'}
+                                disabled={isProcessing}
+                                onChange={e => handleAssignClassLevelTeacher(activeGroup.id, e.target.value)}>
+                                <option value="Not Assigned">— Assign class teacher</option>
+                                {teachers.map(t => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.name}
+                                    {t.classTeacherOf && t.classTeacherOf.classId !== activeGroup.id
+                                      ? ` (currently ${formatClassTeacherOf(t.classTeacherOf)})`
+                                      : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          ) : (
+                            <div className="am-empty">
+                              <div className="am-empty-icon"><Plus size={20}/></div>
+                              <h3>{search ? 'No matching sections' : 'No sections defined'}</h3>
+                              <p>{search ? 'Adjust your search terms' : 'Add sections to start managing this class'}</p>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ) : filteredSecs.map(sec => (
@@ -655,14 +848,14 @@ export default function AcademicManagementPage() {
                               <option key={t.id} value={t.id}>
                                 {t.name}
                                 {t.classTeacherOf && t.classTeacherOf.sectionId !== sec.id
-                                  ? ` (currently ${t.classTeacherOf.className}-${t.classTeacherOf.sectionName})`
+                                  ? ` (currently ${formatClassTeacherOf(t.classTeacherOf)})`
                                   : ''}
                               </option>
                             ))}
                           </select>
                         </td>
 
-                        <td><span className="am-count">{sec.studentCount ?? 0}</span></td>
+                        <td><span className="am-count">{countForSection(activeGroup!, sec)}</span></td>
                         <td><span className="am-room">{sec.roomNo || 'TBD'}</span></td>
 
                         <td>
@@ -770,7 +963,7 @@ export default function AcademicManagementPage() {
                   {teachers.map(t => (
                     <option key={t.id} value={t.id}>
                       {t.name}
-                      {t.classTeacherOf ? ` (currently ${t.classTeacherOf.className}-${t.classTeacherOf.sectionName})` : ''}
+                      {t.classTeacherOf ? ` (currently ${formatClassTeacherOf(t.classTeacherOf)})` : ''}
                     </option>
                   ))}
                 </select>

@@ -11,31 +11,34 @@
  *
  * Responsibilities:
  * ✅ Subscribe to the live teacher list
- * ✅ Create / delete a teacher document
- * ✅ Upload a teacher's photo to Storage
+ * ✅ Upload a teacher's photo to Storage, and attach its URL to an
+ *    already-created teacher document
+ * ✅ Delete a teacher document
  *
  * Does NOT:
+ * ❌ Create a teacher document — that now happens exclusively via the
+ *    createTeacher Cloud Function (see functions/src/teacher/
+ *    createTeacher.ts), because it also has to create the teacher's
+ *    Firebase Auth account, which the client SDK cannot do. This
+ *    repository used to have newTeacherRef/createTeacherAt/
+ *    createTeacher methods doing this as plain client-side writes;
+ *    they're gone, not deprecated-in-place, since keeping them around
+ *    would just be an unused path to a teacher document with no login.
  * ❌ Validate form input
  * ❌ Compress/process images (see utils/image.ts)
- * ❌ Decide the create/upload/write ordering (that's the service)
+ * ❌ Decide the upload/write ordering (that's the service)
  * --------------------------------------------------------------------
  */
 
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
-  DocumentReference,
   onSnapshot,
-  serverTimestamp,
-  setDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
-import { Teacher } from "@/types/teachers";
-
-export type NewTeacherDocument = Omit<Teacher, "id" | "createdAt">;
 
 export class TeachersRepository {
   /**
@@ -61,20 +64,12 @@ export class TeachersRepository {
 
   /**
    * ----------------------------------------------------
-   * Generates a Firestore document reference with an ID,
-   * without writing anything yet. Lets the service upload a
-   * photo keyed by this ID before the teacher document exists,
-   * so the doc can be written once with photoUrl already set.
-   * ----------------------------------------------------
-   */
-  newTeacherRef(schoolId: string): DocumentReference {
-    return doc(collection(db, "schools", schoolId, "teachers"));
-  }
-
-  /**
-   * ----------------------------------------------------
    * Uploads a teacher's photo to Storage and returns its
-   * public download URL.
+   * public download URL. Called with the uid the
+   * createTeacher Cloud Function returned — the teacher
+   * document already exists (created server-side with
+   * photoUrl: null) by the time this ever runs; see
+   * updatePhotoUrl below for attaching the result.
    * ----------------------------------------------------
    */
   async uploadPhoto(schoolId: string, teacherId: string, blob: Blob): Promise<string> {
@@ -85,29 +80,15 @@ export class TeachersRepository {
 
   /**
    * ----------------------------------------------------
-   * Writes a teacher document at a pre-generated reference
-   * (see newTeacherRef). Single write, whether or not a
-   * photo was uploaded first.
+   * Attaches an uploaded photo's URL to an already-created
+   * teacher document. A plain client-side update is fine here —
+   * unlike creating the document itself, this doesn't touch Auth
+   * or any other identity concern, just a display field on a
+   * document the client already has full read/write access to.
    * ----------------------------------------------------
    */
-  async createTeacherAt(ref: DocumentReference, data: NewTeacherDocument): Promise<void> {
-    await setDoc(ref, {
-      ...data,
-      createdAt: serverTimestamp(),
-    });
-  }
-
-  /**
-   * ----------------------------------------------------
-   * Fallback path for creating a teacher without a
-   * pre-generated ref (no photo to upload first).
-   * ----------------------------------------------------
-   */
-  async createTeacher(schoolId: string, data: NewTeacherDocument): Promise<void> {
-    await addDoc(collection(db, "schools", schoolId, "teachers"), {
-      ...data,
-      createdAt: serverTimestamp(),
-    });
+  async updatePhotoUrl(schoolId: string, teacherId: string, photoUrl: string): Promise<void> {
+    await updateDoc(doc(db, "schools", schoolId, "teachers", teacherId), { photoUrl });
   }
 
   /**
@@ -118,6 +99,12 @@ export class TeachersRepository {
    * objects don't affect Firestore/UI correctness, and cleaning
    * them up is a separate concern (e.g. a scheduled Cloud Function)
    * rather than something the client should be responsible for.
+   *
+   * Also does not delete the teacher's Firebase Auth account or
+   * users/{uid} profile — deleting a teacher here only removes them
+   * from this school's roster. Leaving their login intact is the
+   * safer default until there's an explicit decision about whether
+   * "delete a teacher" should also revoke their account entirely.
    * ----------------------------------------------------
    */
   async deleteTeacher(schoolId: string, teacherId: string): Promise<void> {

@@ -24,6 +24,7 @@ import { Teacher, TeacherFormValues } from '@/types/teachers';
 import {
   UserPlus,
   Mail,
+  MailWarning,
   Phone,
   Trash2,
   Loader2,
@@ -32,6 +33,8 @@ import {
   UserCircle,
   X,
   AlertCircle,
+  CheckCircle2,
+  Send,
 } from 'lucide-react';
 
 const EMPTY_FORM: TeacherFormValues = { name: '', email: '', phone: '', subject: '' };
@@ -54,6 +57,15 @@ export default function TeachersPage() {
   const [deleteTarget, setDeleteTarget] = useState<Teacher | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Post-add outcome — specifically surfaces createTeacher's
+  // passwordResetSent flag, which used to be silently discarded here.
+  const [addOutcome, setAddOutcome] = useState<{ kind: 'success' | 'warning'; message: string } | null>(null);
+
+  // Per-teacher "resend setup email" action — keyed by teacher id so
+  // only the row actually clicked shows a loading/sent state.
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [resentId, setResentId] = useState<string | null>(null);
+
   useEffect(() => {
     if (authLoading || !profile?.schoolId) return;
 
@@ -71,8 +83,17 @@ export default function TeachersPage() {
 
     setIsSaving(true);
     setFormError('');
+    setAddOutcome(null);
     try {
-      await teachersService.createTeacher(profile.schoolId, newTeacher, selectedFile);
+      const outcome = await teachersService.createTeacher(profile.schoolId, newTeacher, selectedFile);
+      setAddOutcome(
+        outcome.passwordResetSent
+          ? { kind: 'success', message: `${newTeacher.name} was added — a setup email was sent to ${newTeacher.email}.` }
+          : {
+              kind: 'warning',
+              message: `${newTeacher.name} was added, but the setup email couldn't be sent. Use "Resend setup email" below once they're in the list.`,
+            }
+      );
       setNewTeacher(EMPTY_FORM);
       setSelectedFile(null);
       setShowAdd(false);
@@ -81,6 +102,20 @@ export default function TeachersPage() {
       setFormError(error instanceof Error ? error.message : 'Failed to save teacher. Please check your connection.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleResendSetupEmail = async (teacher: Teacher) => {
+    setResendingId(teacher.id);
+    try {
+      await teachersService.resendSetupEmail(teacher.email);
+      setResentId(teacher.id);
+      setTimeout(() => setResentId((current) => (current === teacher.id ? null : current)), 3000);
+    } catch (error) {
+      console.error('Error resending setup email:', error);
+      setAddOutcome({ kind: 'warning', message: `Couldn't resend the setup email to ${teacher.email}. Please try again.` });
+    } finally {
+      setResendingId(null);
     }
   };
 
@@ -124,6 +159,24 @@ export default function TeachersPage() {
           {showAdd ? 'Cancel' : 'Add Teacher'}
         </button>
       </div>
+
+      {addOutcome && (
+        <div
+          className={`mb-6 flex items-start gap-3 rounded-2xl px-5 py-4 text-sm font-semibold ${
+            addOutcome.kind === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+          }`}
+        >
+          {addOutcome.kind === 'success' ? (
+            <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
+          ) : (
+            <MailWarning size={18} className="mt-0.5 shrink-0" />
+          )}
+          <span className="flex-1">{addOutcome.message}</span>
+          <button onClick={() => setAddOutcome(null)} className="shrink-0 opacity-60 hover:opacity-100">
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {showAdd && (
         <form onSubmit={handleAddTeacher} className="mb-10 bg-white border border-slate-200 p-8 rounded-[2.5rem] shadow-sm animate-in slide-in-from-top-4">
@@ -277,12 +330,28 @@ export default function TeachersPage() {
                     </div>
                   </td>
                   <td className="px-8 py-6 text-right">
-                    <button
-                      onClick={() => setDeleteTarget(t)}
-                      className="p-3 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all"
-                    >
-                      <Trash2 size={20} />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => handleResendSetupEmail(t)}
+                        disabled={resendingId === t.id}
+                        title="Resend setup email"
+                        className="p-3 text-slate-200 hover:text-blue-500 hover:bg-blue-50 rounded-2xl transition-all disabled:opacity-50"
+                      >
+                        {resendingId === t.id ? (
+                          <Loader2 size={20} className="animate-spin" />
+                        ) : resentId === t.id ? (
+                          <CheckCircle2 size={20} className="text-emerald-500" />
+                        ) : (
+                          <Send size={20} />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setDeleteTarget(t)}
+                        className="p-3 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all"
+                      >
+                        <Trash2 size={20} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

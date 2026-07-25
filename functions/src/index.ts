@@ -52,3 +52,8 @@ export { verifyOtp } from "./parent/verifyOtp";
 
 
 export { mockResolveParentSession } from "./parent/mockResolveParentSession";
+
+// Teachers — Auth account creation. Not exported from parent/ since a
+// teacher isn't a parent identity variant; own top-level module, own
+// section here, same as every other feature above.
+export { createTeacher } from "./teacher/createTeacher";
