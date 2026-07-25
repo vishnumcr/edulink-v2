@@ -60,7 +60,9 @@ export interface CreateOrLinkParentInput {
   studentId: string;
   studentName: string;
   className: string;
+  classId: string;
   section: string | null;
+  sectionId: string;
   parent: ParentLinkRequest;
 }
 
@@ -176,7 +178,7 @@ async function getOrCreateAuthUser(
  * shared account for both, per types/parent.ts.
  */
 export async function createOrLinkParent(input: CreateOrLinkParentInput): Promise<ParentLinkResult> {
-  const { schoolId, schoolName, studentId, studentName, className, section, parent } = input;
+  const { schoolId, schoolName, studentId, studentName, className, classId, section, sectionId, parent } = input;
 
   const phone = normalizeIndianPhone(parent.phone);
   if (!phone) {
@@ -198,7 +200,9 @@ export async function createOrLinkParent(input: CreateOrLinkParentInput): Promis
         studentId,
         studentName,
         className,
+        classId,
         section,
+        sectionId,
       }),
       updatedAt: FieldValue.serverTimestamp(),
     });

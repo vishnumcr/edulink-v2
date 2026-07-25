@@ -60,6 +60,12 @@ import type { ParentLinkRequest, ParentLinkResult } from "./parent/types";
 const PAYMENT_MODES = ["cash", "upi", "card", "cheque", "bank_transfer"] as const;
 type PaymentMode = (typeof PAYMENT_MODES)[number];
 
+// Mirrors NO_SECTION_ID in lib/utils.ts on the client — functions/ is a
+// self-contained build root (see functions/src/parent/types.ts's file
+// header for the same rule), so it can't import across that boundary
+// and keeps its own copy of this literal by convention instead.
+const NO_SECTION_ID = "_no_section";
+
 interface CollectAdmissionFeeRequest {
   schoolId: string;
   admissionId: string;
@@ -218,34 +224,22 @@ export const collectAdmissionFee = onCall(
       throw new HttpsError("permission-denied", "You do not have access to this school's admissions.");
     }
 
-    // ── School lookup first — feeStructure is now scoped per academic
-    //    year (schools/{schoolId}/feeStructure/{academicYear}, not a
-    //    fixed "current" doc), so we need to know which year is
-    //    current for this school before we know which fee structure
-    //    doc to read. This makes the two reads sequential where they
-    //    used to be parallel — the dependency is real, not avoidable. ─
-    const schoolSnap = await db.collection("schools").doc(schoolId).get();
+    // ── Fee structure + school lookups (read-only, outside the
+    //    transaction — these aren't mutated by this function, and
+    //    Firestore transactions require all reads before any writes,
+    //    so keeping them out keeps the transaction body simple) ─────
+    const [feeStructureSnap, schoolSnap] = await Promise.all([
+      db.collection("schools").doc(schoolId).collection("feeStructure").doc("current").get(),
+      db.collection("schools").doc(schoolId).get(),
+    ]);
 
+    const feeStructure = (feeStructureSnap.exists ? feeStructureSnap.data() : null) as FeeStructureDoc | null;
+    const admissionFeeConfig = feeStructure?.admissionFee ?? { amount: 0, isActive: false };
     // NOTE: the school doc's field is currentAcademicYear, not
     // academicYear — this previously read the wrong field name and
     // silently wrote an empty academicYear onto every invoice.
     const academicYear = (schoolSnap.exists ? (schoolSnap.data()?.currentAcademicYear as string) : "") || "";
     const schoolName = (schoolSnap.exists ? (schoolSnap.data()?.name as string) : "") || "";
-
-    if (!academicYear) {
-      throw new HttpsError(
-        "failed-precondition",
-        "This school hasn't set a current academic year yet — set one in School Profile before enrolling students."
-      );
-    }
-
-    const feeStructureSnap = await db
-      .collection("schools").doc(schoolId)
-      .collection("feeStructure").doc(academicYear)
-      .get();
-
-    const feeStructure = (feeStructureSnap.exists ? feeStructureSnap.data() : null) as FeeStructureDoc | null;
-    const admissionFeeConfig = feeStructure?.admissionFee ?? { amount: 0, isActive: false };
 
     // ── Payment requirement check ────────────────────────────────────
     if (admissionFeeConfig.isActive) {
@@ -295,6 +289,49 @@ export const collectAdmissionFee = onCall(
         transportStopName?: string;
       };
       const className = admissionDetails.applyingForClass || "";
+
+      // ── Resolve the REAL classId/sectionId from the labels above —
+      // classes are addDoc()'d (random auto-id) and sections are
+      // crypto.randomUUID()'d on the admin side, so "className" alone
+      // is never a valid document reference. This is the ONE place
+      // that resolution needs to happen: everything downstream
+      // (timetables, attendance, the parent app) previously had to
+      // re-resolve label -> id independently, which is both duplicated
+      // logic and a real risk (see the parent app's FragmentTimetable
+      // and the teacher app's AttendanceActivity, both of which had
+      // bugs from doing exactly this resolution incorrectly). Resolving
+      // once, here, and storing the result means later consumers can
+      // read classId/sectionId directly instead of re-resolving.
+      //
+      // Hard-fails on an unresolvable CLASS: the admission form's class
+      // dropdown is sourced from the real classes collection (see
+      // admission/page.tsx), so a mismatch here only happens if the
+      // class was deleted/renamed between application and enrollment —
+      // a genuine data problem worth stopping on, not silently
+      // enrolling into an orphaned reference.
+      //
+      // Does NOT hard-fail on section: "No preference" is a valid,
+      // common choice on the admission form, so falls back to
+      // NO_SECTION_ID rather than treating a missing/unmatched section
+      // preference as an error.
+      const classQuerySnap = await tx.get(
+        db.collection("schools").doc(schoolId).collection("classes").where("className", "==", className)
+      );
+      if (classQuerySnap.empty) {
+        throw new HttpsError(
+          "failed-precondition",
+          `Class "${className}" no longer exists — it may have been renamed or deleted since this application was submitted. Update the admission's class before enrolling.`
+        );
+      }
+      const classDoc = classQuerySnap.docs[0];
+      const classId = classDoc.id;
+
+      const sectionsOnClass = (classDoc.data().sections as { id: string; name: string }[] | undefined) ?? [];
+      const sectionPreference = admissionDetails.sectionPreference || "";
+      const matchedSection = sectionsOnClass.find(
+        (s) => s.name.toLowerCase() === sectionPreference.toLowerCase()
+      );
+      const sectionId = matchedSection?.id ?? NO_SECTION_ID;
 
       // ── Transport lookup (read-only, must happen before any writes
       //    below — Firestore transactions require all reads first,
@@ -363,7 +400,9 @@ export const collectAdmissionFee = onCall(
           photoUrl: null,
         },
         className,
+        classId,
         section: admissionDetails.sectionPreference || null,
+        sectionId,
         parent: {
           fatherName: parent.father?.name || "",
           fatherPhone: parent.father?.phone || "",
@@ -464,11 +503,13 @@ export const collectAdmissionFee = onCall(
         invoiceId: invoiceRef.id,
         admissionNumber,
         className,
+        classId,
         // Needed after the transaction resolves, for parent linking —
         // `parent`/`student` are scoped to this closure and wouldn't
         // otherwise survive past runTransaction().
         studentName: (student.name as string) || "",
         section: (admissionDetails.sectionPreference as string) || null,
+        sectionId,
         father: { name: parent.father?.name || "", phone: parent.father?.phone || "" },
         mother: { name: parent.mother?.name || "", phone: parent.mother?.phone || "" },
       };
@@ -493,7 +534,9 @@ export const collectAdmissionFee = onCall(
           studentId: result.studentId,
           studentName: result.studentName,
           className: result.className,
+          classId: result.classId,
           section: result.section,
+          sectionId: result.sectionId,
           parent: { name: contact.name, phone: contact.phone, relationship } as ParentLinkRequest,
         });
         parentLinks.push({ relationship, result: linkResult, error: null });

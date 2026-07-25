@@ -58,7 +58,9 @@ export interface ParentLinkedStudent {
   studentId: string;
   studentName: string;
   className: string;
+  classId: string;
   section: string | null;
+  sectionId: string;
 }
 
 /**

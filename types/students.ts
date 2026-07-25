@@ -52,6 +52,17 @@ export interface Student {
   profile: StudentProfile;
   className: string;
   /**
+   * Real Firestore document id of the class this student belongs to
+   * (schools/{schoolId}/classes/{classId}) — resolved ONCE from
+   * className at enrollment time (see collectAdmissionFee.ts) and
+   * stored here so consumers needing the real reference (timetables,
+   * attendance) don't have to re-resolve className -> classId
+   * themselves on every use. className above remains the source of
+   * truth for DISPLAY and for fee-structure lookups (which are
+   * deliberately label-keyed, not id-keyed — see feeStructureService).
+   */
+  classId: string;
+  /**
    * Nullable — many schools don't subdivide a class into sections at
    * all (a single class of 25 students has no reason to have a
    * "Section A"). Null means "this student's class has no sections,"
@@ -60,6 +71,14 @@ export interface Student {
    * display/handle, not something to paper over with a fake value.
    */
   section: string | null;
+  /**
+   * Real Firestore id of the section within that class (or the
+   * NO_SECTION_ID sentinel — see lib/utils.ts — if the class has no
+   * sections, or no section preference was given at enrollment).
+   * Same reasoning as classId above: resolved once, stored, not
+   * re-derived from `section` by every consumer.
+   */
+  sectionId: string;
   parent: StudentParent;
   contact: StudentContact;
   status: StudentStatus;
