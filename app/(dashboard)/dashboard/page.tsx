@@ -49,7 +49,7 @@ import { useAuth } from '@/context/AuthContext';
 
 import { studentsService } from '@/services/students/studentsService';
 import { teachersService } from '@/services/teachers/teachersService';
-import { classesService } from '@/services/academic/classesService';
+import { classesRepository } from '@/repositories/academic/classesRepository';
 import { financeService } from '@/services/finance/financeService';
 import { feeStructureService } from '@/services/finance/feeStructureService';
 import { schoolService } from '@/services/school/schoolService';

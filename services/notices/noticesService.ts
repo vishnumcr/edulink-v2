@@ -146,6 +146,80 @@ function matchesFilters(
   return matchesSearch && matchesType && matchesPriority;
 }
 
+/**
+ * Relative time for a PUBLISHED/DRAFT notice's createdAt. Adapted from
+ * the previous page's timeAgo() to take a plain millis number (our
+ * normalized Notice.createdAt) instead of a Firestore Timestamp.
+ */
+export function timeAgo(ms: number): string {
+  if (!ms) return "—";
+  const secs = Math.floor((Date.now() - ms) / 1000);
+  if (secs < 60) return "Just now";
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  if (secs < 86400 * 7) return `${Math.floor(secs / 86400)}d ago`;
+  return new Date(ms).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+export function fullDate(ms: number): string {
+  if (!ms) return "";
+  return new Date(ms).toLocaleString("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * A SCHEDULED notice hasn't happened yet — timeAgo's relative-past
+ * phrasing ("3h ago") would be actively wrong for it, since publishAt
+ * is in the future. See the architecture doc's UI-improvements §3.
+ */
+export function scheduledLabel(publishAtMs: number | null): string {
+  if (!publishAtMs) return "Not scheduled";
+  return `Scheduled for ${new Date(publishAtMs).toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+}
+
+/**
+ * Compact rendering of a notice's targets for the card badge/article
+ * meta strip — "All School" for a single school-wide rule, otherwise
+ * a count ("3 Audiences") with the expanded list available via title
+ * tooltip, so the badge never grows unboundedly with the rule count.
+ */
+export function targetSummary(targets: Notice["targets"]): { label: string; detail: string } {
+  if (targets.length === 0) return { label: "—", detail: "" };
+  if (targets.length === 1 && targets[0].type === "school") {
+    return { label: "All School", detail: "Entire school" };
+  }
+
+  const describe = (rule: Notice["targets"][number]): string => {
+    switch (rule.type) {
+      case "school":
+        return "All School";
+      case "role":
+        return rule.role.charAt(0).toUpperCase() + rule.role.slice(1) + "s";
+      case "class":
+        return `Class ${rule.className}`;
+      case "section":
+        return `Class ${rule.className} · Section ${rule.section}`;
+    }
+  };
+
+  const descriptions = targets.map(describe);
+  if (descriptions.length <= 2) {
+    return { label: descriptions.join(", "), detail: descriptions.join(", ") };
+  }
+  return { label: `${descriptions.length} Audiences`, detail: descriptions.join(", ") };
+}
+
 export class NoticesService {
   normalizeAll(docs: { id: string; data: Record<string, unknown> }[]): Notice[] {
     return sortNotices(docs.map((d) => normalizeNotice(d.id, d.data)));

@@ -57,3 +57,6 @@ export { mockResolveParentSession } from "./parent/mockResolveParentSession";
 // teacher isn't a parent identity variant; own top-level module, own
 // section here, same as every other feature above.
 export { createTeacher } from "./teacher/createTeacher";
+
+// Notices — the only writer for schools/{schoolId}/notices.
+export { publishNotice } from "./notices/publishNotice";
