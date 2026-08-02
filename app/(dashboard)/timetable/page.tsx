@@ -274,6 +274,18 @@ export default function TimetablePage() {
   const currentClass = classes.find((c) => c.id === selectedClassId);
   const hasNoSections = !currentClass?.sections || currentClass.sections.length === 0;
   const currentSectionId = hasNoSections ? NO_SECTION_ID : selectedSectionId;
+  const currentSectionName = hasNoSections
+    ? ""
+    : currentClass?.sections.find((s) => s.id === currentSectionId)?.name ?? "";
+
+  // subjectId -> name, for stamping human-readable subject names onto
+  // each affected teacher's schedule (see diffTeacherSchedulePatches) —
+  // built once here since the service layer deliberately never
+  // fetches subjects itself.
+  const subjectNameById = useMemo(
+    () => new Map(subjects.map((s) => [s.id, s.name])),
+    [subjects]
+  );
 
   useEffect(() => {
     if (!currentClass) return;
@@ -363,7 +375,10 @@ export default function TimetablePage() {
         timetable,
         activeDay,
         editingSlot,
-        { subjectId: editSubjectId, teacherId: editTeacherId }
+        { subjectId: editSubjectId, teacherId: editTeacherId },
+        currentClass?.className ?? "",
+        currentSectionName,
+        subjectNameById
       );
       if (!result.ok) {
         toast.error(result.error);
@@ -393,7 +408,10 @@ export default function TimetablePage() {
         profile.uid,
         timetable,
         activeDay,
-        deletingSlotId
+        deletingSlotId,
+        currentClass?.className ?? "",
+        currentSectionName,
+        subjectNameById
       );
       if (!result.ok) {
         toast.error(result.error);
@@ -424,7 +442,10 @@ export default function TimetablePage() {
         profile.uid,
         timetable,
         activeDay,
-        copyTargetDays
+        copyTargetDays,
+        currentClass?.className ?? "",
+        currentSectionName,
+        subjectNameById
       );
       if (!result.ok) {
         toast.error(result.error);

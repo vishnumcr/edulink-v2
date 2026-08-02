@@ -15,7 +15,7 @@
  *     finance/page.tsx and students/page.tsx already use — no live
  *     listener here, refresh via reload or a manual trigger)
  * - totalTeachers → teachersService.subscribeToTeachers (one-shot read)
- * - classes list → classesService.subscribeToClassLabels (one-shot read)
+ * - classes list → classesRepository.subscribeToClasses (one-shot read, full class+section shape)
  * - feeData (collected/partial/pending/target) → financeService.syncInvoices,
  *   bucketed by Invoice.status exactly the way FeeDonut's own prop
  *   comments define those three buckets (see components/Feedonut.tsx)
@@ -26,9 +26,9 @@
  * - feeAlerts.thisWeekCollected → financeService.getPayments with a
  *   startMs/endMs range (real money that moved this week, independent
  *   of which term it was for)
- * - attendance weekly chart + attendanceDelta → attendanceService.getTrends,
+ * - attendance weekly chart + attendanceDelta → attendanceService.getAnalytics,
  *   called for this week and last week
- * - classBreakdown attendance% → the same getTrends() call's byClass data
+ * - classBreakdown attendance% → the same getAnalytics() call's byClass data, averaged per class across sections
  * - alerts panel → derived from the real aggregates above, not a
  *   separate data source
  *
@@ -53,7 +53,7 @@ import { classesRepository } from '@/repositories/academic/classesRepository';
 import { financeService } from '@/services/finance/financeService';
 import { feeStructureService } from '@/services/finance/feeStructureService';
 import { schoolService } from '@/services/school/schoolService';
-import { attendanceService } from '@/services/attendance/attendanceService';
+import { attendanceService, ClassMeta, StudentMeta } from '@/services/attendance/attendanceService';
 
 import { Teacher } from '@/types/teachers';
 
@@ -120,7 +120,7 @@ interface DashboardData {
 // ── Small local helpers ──────────────────────────────────────────────────────
 
 /**
- * classesService/teachersService only expose live subscriptions, not
+ * classesRepository/teachersService only expose live subscriptions, not
  * one-time getters. Resolves on the first emission and unsubscribes
  * immediately. Same pattern already used in services/onboarding/setupService.ts
  * — duplicated here rather than shared, since this is only the second
@@ -271,17 +271,55 @@ async function loadDashboardData(schoolId: string): Promise<DashboardData> {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
   // ── Independent reads, in parallel ──────────────────────────────────
-  const [students, invoices, teachers, classLabels, schoolProfile, thisWeekTrends, lastWeekTrends, thisWeekPayments] =
+  // Attendance analytics needs studentMetas/classMetas as INPUTS (see
+  // below), so it can't be in this same batch — it depends on this
+  // batch's results, same dependency shape feeStructure already has
+  // on classLabels further down.
+  const [students, invoices, teachers, rawClasses, schoolProfile, thisWeekPayments] =
     await Promise.all([
       studentsService.syncStudents(schoolId),
       financeService.syncInvoices(schoolId),
       firstEmission<Teacher[]>((cb) => teachersService.subscribeToTeachers(schoolId, cb)),
-      firstEmission<string[]>((cb) => classesService.subscribeToClassLabels(schoolId, cb)),
+      firstEmission<{ id: string; data: Record<string, unknown> }[]>((cb) =>
+        classesRepository.subscribeToClasses(schoolId, cb)
+      ),
       schoolService.getSchoolProfile(schoolId),
-      attendanceService.getTrends(schoolId, toISODate(startOfThisWeek), toISODate(now)),
-      attendanceService.getTrends(schoolId, toISODate(startOfLastWeek), toISODate(endOfLastWeek)),
       financeService.getPayments(schoolId, { startMs: startOfThisWeek.getTime() }, 500),
     ]);
+
+  // Full class+section list — same source and shape the real
+  // Attendance/Timetable pages already build this from (classesRepository
+  // only exposes bare label strings, not sections, and getAnalytics
+  // needs sections to bucket byClass per section).
+  const classMetas: ClassMeta[] = rawClasses.map((d) => ({
+    id: d.id,
+    className: (d.data.className as string) || "",
+    sections: ((d.data.sections as { id: string; name: string }[]) || []).map((s) => ({
+      id: s.id,
+      name: s.name,
+    })),
+  }));
+  const classLabels = classMetas.map((c) => c.className);
+
+  // Adapted to StudentMeta rather than passing the full Student shape
+  // into attendanceService — same reasoning the Attendance page uses:
+  // the service only needs the handful of fields it actually reads.
+  const studentMetas: StudentMeta[] = students.map((s) => ({
+    id: s.id,
+    name: s.profile.name,
+    rollNo: s.profile.rollNo,
+    className: s.className,
+    section: s.section,
+  }));
+
+  // thresholdPct only matters for the defaulters list, which this
+  // page doesn't use at all — 75 is just getAnalytics' own default
+  // elsewhere in the app, picked for consistency, not because this
+  // call cares about it.
+  const [thisWeekAnalytics, lastWeekAnalytics] = await Promise.all([
+    attendanceService.getAnalytics(schoolId, studentMetas, classMetas, toISODate(startOfThisWeek), toISODate(now), 75),
+    attendanceService.getAnalytics(schoolId, studentMetas, classMetas, toISODate(startOfLastWeek), toISODate(endOfLastWeek), 75),
+  ]);
 
   // Fee structure's due dates are keyed by classLabels the same way
   // feeStructureService normalizes tuition/books per class — must be
@@ -352,25 +390,42 @@ async function loadDashboardData(schoolId: string): Promise<DashboardData> {
   const thisWeekCollected = thisWeekPayments.reduce((sum, p) => sum + p.amount, 0);
 
   // ── Attendance: this week's daily series + week-over-week delta ─────
-  const attendance: DayAttendance[] = thisWeekTrends.daily.map((point) => {
+  const attendance: DayAttendance[] = thisWeekAnalytics.daily.map((point) => {
     const weekday = new Date(point.date + 'T00:00:00').getDay();
     return { day: DAY_LABELS[weekday], present: point.pctPresent, absent: 100 - point.pctPresent };
   });
 
-  const thisWeekAvg = thisWeekTrends.daily.length
-    ? Math.round(thisWeekTrends.daily.reduce((s, d) => s + d.pctPresent, 0) / thisWeekTrends.daily.length)
+  const thisWeekAvg = thisWeekAnalytics.daily.length
+    ? Math.round(thisWeekAnalytics.daily.reduce((s, d) => s + d.pctPresent, 0) / thisWeekAnalytics.daily.length)
     : 0;
-  const lastWeekAvg = lastWeekTrends.daily.length
-    ? Math.round(lastWeekTrends.daily.reduce((s, d) => s + d.pctPresent, 0) / lastWeekTrends.daily.length)
+  const lastWeekAvg = lastWeekAnalytics.daily.length
+    ? Math.round(lastWeekAnalytics.daily.reduce((s, d) => s + d.pctPresent, 0) / lastWeekAnalytics.daily.length)
     : 0;
 
-  // ── Class breakdown: student count (real) + attendance% (real,
-  //    same getTrends() call, byClass bucket) ──────────────────────────
+  // ── Class breakdown: student count (real) + attendance% (real) ──────
+  // getAnalytics' byClass is per-SECTION (a class with 3 sections has
+  // 3 entries), but this panel is keyed by className alone — so
+  // sections belonging to the same class get averaged together here.
+  // This is an unweighted average of each section's pctPresent, not a
+  // true student-weighted figure (ClassAverage doesn't carry a
+  // headcount to weight by) — a reasonable approximation for an
+  // at-a-glance summary panel, not precise analytics.
   const countByClass = new Map<string, number>();
   for (const s of activeStudents) {
     countByClass.set(s.className, (countByClass.get(s.className) || 0) + 1);
   }
-  const attendanceByClass = new Map(thisWeekTrends.byClass.map((c) => [c.className, c.pctPresent]));
+  const sectionPctsByClass = new Map<string, number[]>();
+  for (const c of thisWeekAnalytics.byClass) {
+    const list = sectionPctsByClass.get(c.className) ?? [];
+    list.push(c.pctPresent);
+    sectionPctsByClass.set(c.className, list);
+  }
+  const attendanceByClass = new Map(
+    Array.from(sectionPctsByClass.entries()).map(([className, pcts]) => [
+      className,
+      Math.round(pcts.reduce((s, p) => s + p, 0) / pcts.length),
+    ])
+  );
 
   const classBreakdown: ClassBreakdown[] = classLabels.map((className) => ({
     className,
@@ -413,7 +468,7 @@ async function loadDashboardData(schoolId: string): Promise<DashboardData> {
         name: s.profile.name,
         classSection: s.section ? `${s.className}-${s.section}` : s.className,
         rollNo: s.profile.rollNo,
-        // Per-student today's mark isn't part of getTrends()'s aggregate
+        // Per-student today's mark isn't part of getAnalytics()'s aggregate
         // output (it only returns class/day totals, not per-student rows)
         // — showing a real per-student status here would need a separate
         // per-student read this table doesn't currently justify the cost

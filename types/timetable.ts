@@ -103,7 +103,69 @@ export type TimetableDay = Record<string, TimetablePeriod>;
  * lookup needed. See timetableService.buildConflictMap.
  * ------------------------------------------------------------------
  */
+export interface TeacherScheduleEntry {
+  subjectId: string;
+  /** Denormalized so the teacher app's login → schedule read never needs
+   * a second lookup into subjects just to render "Maths, Period 3". */
+  subjectName: string;
+}
+
+export type TeacherScheduleDay = Record<string, TeacherScheduleEntry>; // slotId -> entry
+
+export interface TeacherSectionSchedule {
+  className: string;
+  sectionName: string;
+  days: Record<string, TeacherScheduleDay>;
+}
+
+/**
+ * ------------------------------------------------------------------
+ * schools/{schoolId}/teacherSchedules/{teacherId}
+ *
+ * The teacher-facing read model for "what's my schedule" — one read,
+ * by the teacher's own id, on login. Deliberately its OWN document,
+ * not a field on teachers/{teacherId}: that profile document is core
+ * HR data (name/email/phone/subject), edited rarely by an admin. This
+ * is derived schedule data, rewritten every time ANY class-section's
+ * timetable that this teacher appears in gets saved — mixing a
+ * frequently-rewritten derived field into an otherwise-stable profile
+ * doc is the same bounded-context problem parentAttendance was kept
+ * separate from students/{studentId} to avoid.
+ *
+ * Keyed by `${classId}_${sectionId}` under bySection so that saving
+ * one class-section's timetable only ever touches that ONE key (a
+ * scoped nested-field merge — see timetableRepository.saveTimetable) —
+ * a teacher who teaches five different sections doesn't get a
+ * read-modify-write race between two admins independently editing two
+ * different classes at overlapping times.
+ * ------------------------------------------------------------------
+ */
+export interface TeacherSchedule {
+  teacherId: string;
+  bySection: Record<string, TeacherSectionSchedule>;
+  updatedAt: number;
+}
+
+/**
+ * One (day, slot) change for one teacher, produced by diffing a
+ * timetable save's old `days` against its new `days` — see
+ * timetableService's diffTeacherSchedulePatches. `entry: null` means
+ * this teacher LOST this slot (either removed outright, or reassigned
+ * to a different teacher) and their schedule doc's corresponding key
+ * must be cleared, not just left stale.
+ */
+export interface TeacherSchedulePatch {
+  teacherId: string;
+  sectionKey: string;
+  className: string;
+  sectionName: string;
+  day: string;
+  slotId: string;
+  entry: TeacherScheduleEntry | null;
+}
+
 export interface WeeklyTimetable {
+
   schoolId: string;
   classId: string;
   /** NO_SECTION_ID for a class with no sections — see timetableService. */

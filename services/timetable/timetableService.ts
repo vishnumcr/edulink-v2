@@ -38,6 +38,10 @@ import {
 import { timetableCache } from "@/services/timetable/timetableCache";
 import {
   TeacherConflictMap,
+  TeacherSchedule,
+  TeacherScheduleDay,
+  TeacherScheduleEntry,
+  TeacherSchedulePatch,
   TimetableDay,
   TimingSlot,
   WeeklyTimetable,
@@ -286,6 +290,11 @@ export class TimetableService {
    * class-section's whole `days` map with optimistic concurrency.
    * `current` must be the caller's most recently loaded copy — its
    * `version` is what guards against overwriting a concurrent edit.
+   *
+   * `className`/`sectionName` (display labels) and `subjectNameById`
+   * (the page's already-loaded subject list) exist purely to build
+   * the denormalized TeacherSchedule patches — see diffTeacherSchedulePatches.
+   * This service still never fetches subjects/classes itself.
    */
   async saveDay(
     schoolId: string,
@@ -296,7 +305,10 @@ export class TimetableService {
     current: WeeklyTimetable,
     day: string,
     slot: TimingSlot | undefined,
-    values: { subjectId: string; teacherId: string }
+    values: { subjectId: string; teacherId: string },
+    className: string,
+    sectionName: string,
+    subjectNameById: Map<string, string>
   ): Promise<{ ok: true; timetable: WeeklyTimetable } | { ok: false; error: string }> {
     const error = this.validatePeriod(slot, values);
     if (error) return { ok: false, error };
@@ -309,7 +321,10 @@ export class TimetableService {
       },
     };
 
-    return this.persist(schoolId, classId, sectionId, academicYear, updatedBy, current, nextDays);
+    return this.persist(
+      schoolId, classId, sectionId, academicYear, updatedBy, current, nextDays,
+      className, sectionName, subjectNameById
+    );
   }
 
   /** Clears one slot's subject+teacher assignment on one day. The slot itself stays in the master clock. */
@@ -321,13 +336,19 @@ export class TimetableService {
     updatedBy: string,
     current: WeeklyTimetable,
     day: string,
-    slotId: string
+    slotId: string,
+    className: string,
+    sectionName: string,
+    subjectNameById: Map<string, string>
   ): Promise<{ ok: true; timetable: WeeklyTimetable } | { ok: false; error: string }> {
     const nextDay = { ...current.days[day] };
     delete nextDay[slotId];
     const nextDays = { ...current.days, [day]: nextDay };
 
-    return this.persist(schoolId, classId, sectionId, academicYear, updatedBy, current, nextDays);
+    return this.persist(
+      schoolId, classId, sectionId, academicYear, updatedBy, current, nextDays,
+      className, sectionName, subjectNameById
+    );
   }
 
   /**
@@ -346,7 +367,10 @@ export class TimetableService {
     updatedBy: string,
     current: WeeklyTimetable,
     sourceDay: string,
-    targetDays: string[]
+    targetDays: string[],
+    className: string,
+    sectionName: string,
+    subjectNameById: Map<string, string>
   ): Promise<{ ok: true; timetable: WeeklyTimetable } | { ok: false; error: string }> {
     const sourcePeriods = current.days[sourceDay] || {};
     const nextDays = { ...current.days };
@@ -354,7 +378,78 @@ export class TimetableService {
       nextDays[targetDay] = { ...(nextDays[targetDay] || {}), ...sourcePeriods };
     }
 
-    return this.persist(schoolId, classId, sectionId, academicYear, updatedBy, current, nextDays);
+    return this.persist(
+      schoolId, classId, sectionId, academicYear, updatedBy, current, nextDays,
+      className, sectionName, subjectNameById
+    );
+  }
+
+  /**
+   * ----------------------------------------------------
+   * Diffs old vs new `days` maps for ONE class-section and produces
+   * the TeacherSchedulePatch list every affected teacher's schedule
+   * needs — covering all four cases a single save can produce at any
+   * (day, slot): newly assigned, removed, reassigned to a different
+   * teacher, or same teacher with the subject changed. Runs over
+   * every day/slot touched by the save, not just the one slot a
+   * single saveDay call targets — copyDay can change six days' worth
+   * of slots in one save, and every one of them needs its own patch.
+   * ----------------------------------------------------
+   */
+  private diffTeacherSchedulePatches(
+    classId: string,
+    sectionId: string,
+    className: string,
+    sectionName: string,
+    beforeDays: Record<string, TimetableDay>,
+    afterDays: Record<string, TimetableDay>,
+    subjectNameById: Map<string, string>
+  ): TeacherSchedulePatch[] {
+    const sectionKey = `${classId}_${sectionId}`;
+    const patches: TeacherSchedulePatch[] = [];
+    const allDays = new Set([...Object.keys(beforeDays), ...Object.keys(afterDays)]);
+
+    for (const day of allDays) {
+      const beforeDay = beforeDays[day] || {};
+      const afterDay = afterDays[day] || {};
+      const allSlots = new Set([...Object.keys(beforeDay), ...Object.keys(afterDay)]);
+
+      for (const slotId of allSlots) {
+        const before = beforeDay[slotId];
+        const after = afterDay[slotId];
+        const beforeTeacherId = before?.teacherId ?? "";
+        const afterTeacherId = after?.teacherId ?? "";
+
+        const unchanged = beforeTeacherId === afterTeacherId && before?.subjectId === after?.subjectId;
+        if (unchanged) continue;
+
+        // The previous teacher (if any) lost this exact slot — clear
+        // it from their schedule. Skipped when the same teacher keeps
+        // the slot with just a different subject (handled below as an
+        // update to the same key, not a clear-then-set).
+        if (beforeTeacherId && beforeTeacherId !== afterTeacherId) {
+          patches.push({ teacherId: beforeTeacherId, sectionKey, className, sectionName, day, slotId, entry: null });
+        }
+        // The new teacher (if any) has this slot now — new assignment,
+        // reassignment, or same teacher with an updated subject.
+        if (afterTeacherId) {
+          patches.push({
+            teacherId: afterTeacherId,
+            sectionKey,
+            className,
+            sectionName,
+            day,
+            slotId,
+            entry: {
+              subjectId: after!.subjectId,
+              subjectName: subjectNameById.get(after!.subjectId) ?? "Unknown subject",
+            },
+          });
+        }
+      }
+    }
+
+    return patches;
   }
 
   /**
@@ -362,7 +457,12 @@ export class TimetableService {
    * Shared save path for saveDay/deleteDay/copyDay: write the given
    * `days` map with the current copy's version as the expected
    * version, update the local cache on success, and translate a
-   * version conflict into the friendly error the UI shows.
+   * version conflict into the friendly error the UI shows. Also
+   * diffs old vs new `days` to compute and apply teacherSchedules
+   * patches in the SAME transaction as the timetable write — see
+   * timetableRepository.saveTimetable's own doc comment for why that
+   * matters (a reload between the two would otherwise leave a
+   * teacher's schedule silently stale).
    * ----------------------------------------------------
    */
   private async persist(
@@ -372,8 +472,15 @@ export class TimetableService {
     academicYear: string,
     updatedBy: string,
     current: WeeklyTimetable,
-    nextDays: Record<string, TimetableDay>
+    nextDays: Record<string, TimetableDay>,
+    className: string,
+    sectionName: string,
+    subjectNameById: Map<string, string>
   ): Promise<{ ok: true; timetable: WeeklyTimetable } | { ok: false; error: string }> {
+    const patches = this.diffTeacherSchedulePatches(
+      classId, sectionId, className, sectionName, current.days, nextDays, subjectNameById
+    );
+
     const result = await timetableRepository.saveTimetable(
       schoolId,
       classId,
@@ -381,7 +488,8 @@ export class TimetableService {
       nextDays,
       academicYear,
       current.version,
-      updatedBy
+      updatedBy,
+      patches
     );
 
     if (!result.ok) {
@@ -391,6 +499,55 @@ export class TimetableService {
     const timetable = normalizeTimetable(result.doc, { schoolId, classId, sectionId, academicYear });
     await timetableCache.set(schoolId, classId, sectionId, timetable);
     return { ok: true, timetable };
+  }
+
+  /**
+   * ----------------------------------------------------
+   * The teacher-facing read — one document, by the teacher's own id.
+   * Returns an empty schedule (not null, not an error) for a teacher
+   * with no assignments yet, matching this file's existing pattern
+   * for "nothing saved yet" (see emptyTimetable) — the teacher app's
+   * "My Schedule" screen can render this directly with no separate
+   * not-found branch.
+   * ----------------------------------------------------
+   */
+  async getMySchedule(schoolId: string, teacherId: string): Promise<TeacherSchedule> {
+    const raw = await timetableRepository.getSchedule(schoolId, teacherId);
+    if (!raw) {
+      return { teacherId, bySection: {}, updatedAt: 0 };
+    }
+
+    const data = raw.data;
+    const rawBySection = (data.bySection as Record<string, Record<string, unknown>>) ?? {};
+    const bySection: TeacherSchedule["bySection"] = {};
+
+    for (const [sectionKey, section] of Object.entries(rawBySection)) {
+      const rawDays = (section.days as Record<string, Record<string, unknown>>) ?? {};
+      const days: Record<string, TeacherScheduleDay> = {};
+      for (const [day, slots] of Object.entries(rawDays)) {
+        const normalizedDay: TeacherScheduleDay = {};
+        for (const [slotId, entry] of Object.entries(slots)) {
+          const e = entry as Record<string, unknown>;
+          normalizedDay[slotId] = {
+            subjectId: (e.subjectId as string) || "",
+            subjectName: (e.subjectName as string) || "",
+          } as TeacherScheduleEntry;
+        }
+        days[day] = normalizedDay;
+      }
+
+      bySection[sectionKey] = {
+        className: (section.className as string) || "",
+        sectionName: (section.sectionName as string) || "",
+        days,
+      };
+    }
+
+    return {
+      teacherId,
+      bySection,
+      updatedAt: toMillis(data.updatedAt),
+    };
   }
 }
 
