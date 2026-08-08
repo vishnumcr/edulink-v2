@@ -4,51 +4,34 @@
  * repositories/calendar/calendarRepository.ts
  *
  * Purpose:
- * The only place that talks to Firestore for the Academic Calendar —
- * schools/{schoolId}/academicCalendar/{academicYear}, schools/
- * {schoolId}/calendarDays/{date}, and schools/{schoolId}/
- * calendarEvents/{eventId}. Config/reference data scoped to a school
- * the caller already has permission to touch — plain CRUD, fine
- * directly through the client SDK, same reasoning as timingsRepository/
- * timetableRepository.
+ * The only place that talks to Supabase for the Academic Calendar —
+ * academic_years, calendar_day_overrides, and calendar_events (see
+ * supabase/migrations/0001_academic_calendar.sql). This used to be a
+ * thin Firestore CRUD wrapper; the calendar moved to Supabase because
+ * it's read on every parent-app open and written a handful of times a
+ * year, and Firestore bills per document read for that. Supabase is
+ * now the SOURCE OF TRUTH for this data — nothing calendar-related
+ * lives in Firestore anymore.
  *
  * Responsibilities:
  * ✅ One-time read/write of one academic year's start/end/terms, with
- *    optimistic concurrency (same pattern as timetableRepository.saveTimetable)
- * ✅ One-time read of every calendarDays exception in one academic
- *    year, or a single date's override by ID
- * ✅ Read schools/{schoolId}/config/calendarMeta — a tiny per-year
- *    watermark doc bumped on every calendarDays write, so callers can
- *    tell "has anything in this year's exceptions changed" without
- *    reading the whole calendarDays collection. See
- *    calendarService.getWorkingDayOverrides for how this is used.
- * ✅ CRUD for calendarEvents
+ *    optimistic concurrency via the save_academic_year RPC (same
+ *    reject-a-stale-version semantics the old Firestore transaction had)
+ * ✅ Read every calendar_day_overrides exception in one academic year,
+ *    or a single date's override by ID
+ * ✅ CRUD for calendar_events
  *
  * Does NOT:
  * ❌ Validate form input, or decide what counts as a working day
  *    (that's the service)
- * ❌ Use onSnapshot anywhere. Same reasoning as timetableRepository:
- *    this is read constantly, written rarely, so one-time reads plus
- *    local caching (see calendarCache.ts) instead of a live listener.
+ * ❌ Do any local caching/delta-sync — that Firestore-specific trick
+ *    (see the old calendarCache.ts) existed only to dodge Firestore's
+ *    per-document read cost, which doesn't apply here. calendarService
+ *    just calls this repository directly on every read now.
  * --------------------------------------------------------------------
  */
 
-import {
-  addDoc,
-  collection,
-  deleteDoc,
-  deleteField,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  runTransaction,
-  serverTimestamp,
-  updateDoc,
-  where,
-  writeBatch,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 
 export interface RawDoc {
   id: string;
@@ -72,35 +55,29 @@ export interface DayOverrideInput {
   notes?: string;
 }
 
+/** Postgres error code we raise ourselves (`raise exception ... using errcode = 'P0001'`) for a stale expected version. See save_academic_year in the migration. */
+const VERSION_CONFLICT_MESSAGE = "version_conflict";
+
 export class CalendarRepository {
-  private yearDocRef(schoolId: string, academicYear: string) {
-    return doc(db, "schools", schoolId, "academicCalendar", academicYear);
-  }
-
-  private dayDocRef(schoolId: string, date: string) {
-    return doc(db, "schools", schoolId, "calendarDays", date);
-  }
-
-  private metaDocRef(schoolId: string) {
-    return doc(db, "schools", schoolId, "config", "calendarMeta");
-  }
-
-  private eventsCollectionRef(schoolId: string) {
-    return collection(db, "schools", schoolId, "calendarEvents");
-  }
-
   // ── Academic year (start/end/terms) ─────────────────────────────────────
 
   async getAcademicYear(schoolId: string, academicYear: string): Promise<RawDoc | null> {
-    const snapshot = await getDoc(this.yearDocRef(schoolId, academicYear));
-    return snapshot.exists() ? { id: snapshot.id, data: snapshot.data() } : null;
+    const { data, error } = await supabase
+      .from("academic_years")
+      .select("*")
+      .eq("school_id", schoolId)
+      .eq("academic_year", academicYear)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data ? { id: data.academic_year as string, data } : null;
   }
 
   /**
-   * Same optimistic-concurrency shape as timetableRepository.saveTimetable:
-   * read the current version inside a transaction, reject a stale
-   * `expectedVersion`, otherwise write and increment. See that method's
-   * doc comment for the full reasoning — identical here.
+   * Same optimistic-concurrency shape as the old Firestore transaction:
+   * reject a stale `expectedVersion`, otherwise write and increment.
+   * The row lock + version check both happen inside save_academic_year
+   * itself, so this is atomic even under concurrent saves.
    */
   async saveAcademicYear(
     schoolId: string,
@@ -109,66 +86,53 @@ export class CalendarRepository {
     expectedVersion: number,
     updatedBy: string
   ): Promise<SaveAcademicYearResult> {
-    const ref = this.yearDocRef(schoolId, academicYear);
-
-    const outcome = await runTransaction(db, async (tx) => {
-      const snapshot = await tx.get(ref);
-      const currentVersion = snapshot.exists() ? ((snapshot.data().version as number) ?? 0) : 0;
-
-      if (currentVersion !== expectedVersion) {
-        return { ok: false as const };
-      }
-
-      tx.set(ref, {
-        schoolId,
-        academicYear,
-        startDate: fields.startDate,
-        endDate: fields.endDate,
-        terms: fields.terms,
-        version: currentVersion + 1,
-        updatedAt: serverTimestamp(),
-        updatedBy,
-      });
-
-      return { ok: true as const };
+    const { data, error } = await supabase.rpc("save_academic_year", {
+      p_school_id: schoolId,
+      p_academic_year: academicYear,
+      p_start_date: fields.startDate,
+      p_end_date: fields.endDate,
+      p_terms: fields.terms,
+      p_expected_version: expectedVersion,
+      p_updated_by: updatedBy,
     });
 
-    if (!outcome.ok) {
-      return { ok: false, reason: "conflict" };
+    if (error) {
+      if (error.message.includes(VERSION_CONFLICT_MESSAGE)) {
+        return { ok: false, reason: "conflict" };
+      }
+      throw error;
     }
 
-    const saved = await this.getAcademicYear(schoolId, academicYear);
-    return { ok: true, doc: saved! };
+    const row = Array.isArray(data) ? data[0] : data;
+    return { ok: true, doc: { id: row.academic_year as string, data: row } };
   }
 
   // ── Day overrides (holidays / working-day overrides) ────────────────────
 
   async getDayOverrides(schoolId: string, academicYear: string): Promise<RawDoc[]> {
-    const q = query(
-      collection(db, "schools", schoolId, "calendarDays"),
-      where("academicYear", "==", academicYear)
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((d) => ({ id: d.id, data: d.data() }));
+    const { data, error } = await supabase
+      .from("calendar_day_overrides")
+      .select("*")
+      .eq("school_id", schoolId)
+      .eq("academic_year", academicYear);
+
+    if (error) throw error;
+    return (data ?? []).map((row) => ({ id: row.date as string, data: row }));
   }
 
   async getDayOverride(schoolId: string, date: string): Promise<RawDoc | null> {
-    const snapshot = await getDoc(this.dayDocRef(schoolId, date));
-    return snapshot.exists() ? { id: snapshot.id, data: snapshot.data() } : null;
+    const { data, error } = await supabase
+      .from("calendar_day_overrides")
+      .select("*")
+      .eq("school_id", schoolId)
+      .eq("date", date)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data ? { id: data.date as string, data } : null;
   }
 
-  /** The per-year watermark doc — `{ [academicYear]: Timestamp }`. Missing entirely, or missing a given year's field, both just mean "no exceptions have ever been saved for that year yet." */
-  async getCalendarMeta(schoolId: string): Promise<Record<string, unknown> | null> {
-    const snapshot = await getDoc(this.metaDocRef(schoolId));
-    return snapshot.exists() ? snapshot.data() : null;
-  }
-
-  /**
-   * Upserts one date's override and bumps that academic year's
-   * watermark in the same batch, so a cache checking the watermark
-   * can never observe "changed" without the underlying data actually
-   * being there yet (or vice versa).
-   */
+  /** Upserts one date's override via the same RPC saveDayOverrideRange uses, with a single-element array. */
   async saveDayOverride(
     schoolId: string,
     date: string,
@@ -176,45 +140,15 @@ export class CalendarRepository {
     input: DayOverrideInput,
     updatedBy: string
   ): Promise<void> {
-    const ref = this.dayDocRef(schoolId, date);
-    const existing = await getDoc(ref);
-
-    const payload: Record<string, unknown> = {
-      date,
-      academicYear,
-      type: input.type,
-      label: input.label,
-      category: input.category ?? deleteField(),
-      notes: input.notes ?? deleteField(),
-      updatedBy,
-      updatedAt: serverTimestamp(),
-    };
-    if (!existing.exists()) {
-      payload.createdBy = updatedBy;
-      payload.createdAt = serverTimestamp();
-    }
-
-    const batch = writeBatch(db);
-    batch.set(ref, payload, { merge: true });
-    batch.set(this.metaDocRef(schoolId), { [academicYear]: serverTimestamp() }, { merge: true });
-    await batch.commit();
+    await this.saveDayOverrideRange(schoolId, [date], academicYear, input, updatedBy);
   }
 
   /**
    * Same upsert as saveDayOverride, but for N consecutive dates in one
-   * batch — what a multi-day festival break (Dasara, Sankranthi) needs
-   * instead of adding the same holiday one date at a time. Still one
-   * document per date (see this file's own header comment on why:
-   * O(1) single-date lookups for the teacher app) — this is a
-   * convenience for the WRITE, not a new storage shape. A single
-   * Firestore batch caps at 500 writes; even a generous multi-week
-   * festival break is nowhere near that, so no chunking needed.
-   *
-   * Reads every date's existing doc first (in parallel) so createdBy/
-   * createdAt is preserved for any date in the range that already had
-   * an override on file — same care saveDayOverride already takes for
-   * a single date, kept consistent here rather than silently dropped
-   * for the bulk path.
+   * call — what a multi-day festival break (Dasara, Sankranthi) needs
+   * instead of adding the same holiday one date at a time. The RPC
+   * preserves created_by/created_at for any date that already had a
+   * row on file, same care the single-date path takes.
    */
   async saveDayOverrideRange(
     schoolId: string,
@@ -223,44 +157,41 @@ export class CalendarRepository {
     input: DayOverrideInput,
     updatedBy: string
   ): Promise<void> {
-    const refs = dates.map((date) => this.dayDocRef(schoolId, date));
-    const existingSnaps = await Promise.all(refs.map((ref) => getDoc(ref)));
-
-    const batch = writeBatch(db);
-    dates.forEach((date, i) => {
-      const payload: Record<string, unknown> = {
-        date,
-        academicYear,
-        type: input.type,
-        label: input.label,
-        category: input.category ?? deleteField(),
-        notes: input.notes ?? deleteField(),
-        updatedBy,
-        updatedAt: serverTimestamp(),
-      };
-      if (!existingSnaps[i].exists()) {
-        payload.createdBy = updatedBy;
-        payload.createdAt = serverTimestamp();
-      }
-      batch.set(refs[i], payload, { merge: true });
+    const { error } = await supabase.rpc("upsert_calendar_day_overrides", {
+      p_school_id: schoolId,
+      p_dates: dates,
+      p_academic_year: academicYear,
+      p_type: input.type,
+      p_category: input.category ?? null,
+      p_label: input.label,
+      p_notes: input.notes ?? null,
+      p_updated_by: updatedBy,
     });
-    batch.set(this.metaDocRef(schoolId), { [academicYear]: serverTimestamp() }, { merge: true });
-    await batch.commit();
+
+    if (error) throw error;
   }
 
-  async deleteDayOverride(schoolId: string, date: string, academicYear: string): Promise<void> {
-    const batch = writeBatch(db);
-    batch.delete(this.dayDocRef(schoolId, date));
-    batch.set(this.metaDocRef(schoolId), { [academicYear]: serverTimestamp() }, { merge: true });
-    await batch.commit();
+  async deleteDayOverride(schoolId: string, date: string): Promise<void> {
+    const { error } = await supabase
+      .from("calendar_day_overrides")
+      .delete()
+      .eq("school_id", schoolId)
+      .eq("date", date);
+
+    if (error) throw error;
   }
 
   // ── Events (exams, PTMs, functions — informational only) ────────────────
 
   async getEvents(schoolId: string, academicYear: string): Promise<RawDoc[]> {
-    const q = query(this.eventsCollectionRef(schoolId), where("academicYear", "==", academicYear));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((d) => ({ id: d.id, data: d.data() }));
+    const { data, error } = await supabase
+      .from("calendar_events")
+      .select("*")
+      .eq("school_id", schoolId)
+      .eq("academic_year", academicYear);
+
+    if (error) throw error;
+    return (data ?? []).map((row) => ({ id: row.id as string, data: row }));
   }
 
   async saveEvent(
@@ -270,30 +201,54 @@ export class CalendarRepository {
     fields: { title: string; description?: string; startDate: string; endDate: string; category: string },
     updatedBy: string
   ): Promise<string> {
-    const payload: Record<string, unknown> = {
-      title: fields.title,
-      description: fields.description ?? deleteField(),
-      startDate: fields.startDate,
-      endDate: fields.endDate,
-      category: fields.category,
-      academicYear,
-      updatedBy,
-      updatedAt: serverTimestamp(),
-    };
-
     if (eventId) {
-      await updateDoc(doc(db, "schools", schoolId, "calendarEvents", eventId), payload);
+      const { error } = await supabase
+        .from("calendar_events")
+        .update({
+          title: fields.title,
+          description: fields.description ?? null,
+          start_date: fields.startDate,
+          end_date: fields.endDate,
+          category: fields.category,
+          academic_year: academicYear,
+          updated_by: updatedBy,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", eventId)
+        .eq("school_id", schoolId);
+
+      if (error) throw error;
       return eventId;
     }
 
-    payload.createdBy = updatedBy;
-    payload.createdAt = serverTimestamp();
-    const created = await addDoc(this.eventsCollectionRef(schoolId), payload);
-    return created.id;
+    const { data, error } = await supabase
+      .from("calendar_events")
+      .insert({
+        school_id: schoolId,
+        title: fields.title,
+        description: fields.description ?? null,
+        start_date: fields.startDate,
+        end_date: fields.endDate,
+        category: fields.category,
+        academic_year: academicYear,
+        created_by: updatedBy,
+        updated_by: updatedBy,
+      })
+      .select("id")
+      .single();
+
+    if (error) throw error;
+    return data.id as string;
   }
 
   async deleteEvent(schoolId: string, eventId: string): Promise<void> {
-    await deleteDoc(doc(db, "schools", schoolId, "calendarEvents", eventId));
+    const { error } = await supabase
+      .from("calendar_events")
+      .delete()
+      .eq("id", eventId)
+      .eq("school_id", schoolId);
+
+    if (error) throw error;
   }
 }
 

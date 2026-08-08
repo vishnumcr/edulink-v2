@@ -6,53 +6,40 @@
  * Purpose:
  * Shared types for the Academic Calendar — a school-wide, reusable
  * source of truth for "is this date a working day, and what's it
- * called if not." Three normalized Firestore collections remain the
- * editable SOURCE OF TRUTH:
+ * called if not." Three Supabase tables (see
+ * supabase/migrations/0001_academic_calendar.sql) are the editable
+ * SOURCE OF TRUTH — moved off Firestore because this data is read on
+ * every parent-app open and written a handful of times a year, and
+ * Firestore bills per document read for that:
  *
- *   schools/{schoolId}/academicCalendar/{academicYear}
- *     One document per academic year: the year's own start/end dates
- *     and its terms/semesters. Keyed by the academic year string
- *     (e.g. "2025-26" — the same string SchoolProfile.currentAcademicYear
- *     already uses) rather than a singleton config doc, on purpose:
+ *   academic_years (school_id, academic_year)
+ *     One row per academic year: the year's own start/end dates and
+ *     its terms/semesters. Keyed by the academic year string (e.g.
+ *     "2025-26" — the same string SchoolProfile.currentAcademicYear
+ *     already uses) rather than a singleton config row, on purpose:
  *     a school's calendar from last year shouldn't be overwritten the
  *     moment a new academic year starts, and a school should be able
  *     to look back at (or set up next year's) calendar without losing
  *     the current one.
  *
- *   schools/{schoolId}/calendarDays/{date}
- *     One document per EXCEPTION date, not one document per day of
- *     the year. The default weekly pattern (Monday–Friday working,
- *     Saturday/Sunday not) is implicit and never stored — only dates
- *     that deviate from it get a document here.
+ *   calendar_day_overrides (school_id, date)
+ *     One row per EXCEPTION date, not one row per day of the year.
+ *     The default weekly pattern (Monday–Friday working, Saturday/
+ *     Sunday not) is implicit and never stored — only dates that
+ *     deviate from it get a row here.
  *
- *   schools/{schoolId}/calendarEvents/{eventId}
- *     Auto-ID-shaped documents (ID generated client-side — see
- *     calendarRepository.saveEvent — so it can be written into the
- *     snapshot's dotted-path update in the same batch) for things
- *     worth marking on a calendar that have NOTHING to do with
- *     whether school is in session that day.
+ *   calendar_events (id uuid)
+ *     Rows for things worth marking on a calendar that have NOTHING
+ *     to do with whether school is in session that day.
  *
- * A FOURTH document is the disposable READ MODEL every consumer
- * actually reads from — see CalendarSnapshot below. It is rebuilt
- * atomically (same batch/transaction) on every write to the
- * collections above; nothing ever reads calendarDays/calendarEvents
- * directly except the write paths themselves. See
- * calendarService.getSnapshot for the read-side workflow.
+ * The parent app reads all three directly via the Supabase anon key
+ * (public SELECT, RLS-enforced) instead of going through Firestore —
+ * that's the entire point of the move. See calendarRepository for the
+ * read/write paths and calendarService for the working-day resolution
+ * logic every consumer (Attendance today, Timetable/Dashboard later)
+ * shares instead of reimplementing.
  * --------------------------------------------------------------------
  */
-
-/**
- * Bump this whenever CalendarSnapshot's SHAPE changes (not its data).
- * calendarService compares a cached snapshot's own schemaVersion
- * against this constant and discards the cache on mismatch — even if
- * the cached `version` counter happens to still match, an old cached
- * document built under a previous shape shouldn't be trusted just
- * because nothing mutated it since. This is what makes a future
- * structural change (e.g. changing what a year entry contains) safe
- * to ship without also writing a data migration for every existing
- * cached copy sitting in someone's browser.
- */
-export const CALENDAR_SNAPSHOT_SCHEMA_VERSION = 1;
 
 /**
  * ------------------------------------------------------------------

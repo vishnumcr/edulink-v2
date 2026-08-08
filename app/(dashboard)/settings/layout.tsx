@@ -26,7 +26,6 @@ const SECTIONS = [
   { href: "/settings/general", label: "Info", icon: InfoIcon },
   { href: "/settings/subjects", label: "Subjects", icon: Book },
   { href: "/settings/timings", label: "Timings", icon: Clock3 },
-  { href: "/settings/calendar", label: "Calendar", icon: CalendarRange },
 
 ];
 

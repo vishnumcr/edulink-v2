@@ -58,16 +58,14 @@ const OBJECT_STORES: { name: string; keyPath: string }[] = [
   // itself carries `updatedAt`, which the delta-sync compares
   // directly against Firestore instead of a stored sync timestamp.
   { name: "timetables", keyPath: "cacheKey" },
-  // One row per school+academicYear's full set of calendar day
-  // exceptions (holidays/working-day overrides) — see
-  // services/calendar/calendarCache.ts. Unlike timetables, this DOES
-  // need its own stored watermark (the row's own `watermark` field):
-  // a WeeklyTimetable is one document with its own `updatedAt`, but
-  // calendarDays is a whole COLLECTION of exception documents with no
-  // single `updatedAt` to compare against — the watermark here is
-  // read from the small schools/{schoolId}/config/calendarMeta doc
-  // instead.
-  { name: "calendar_overrides", keyPath: "cacheKey" },
+  // "calendar_overrides" used to live here for the Academic Calendar's
+  // Firestore-watermark-based delta-sync cache. The calendar has since
+  // moved to Supabase (see repositories/calendar/calendarRepository.ts)
+  // and no longer needs local caching at all, so that store — and
+  // services/calendar/calendarCache.ts, which owned it — were removed.
+  // Left this note instead of silently deleting the entry from history:
+  // any browser that still has the old object store just carries a
+  // harmless unused table; no need to bump SCHEMA_VERSION to remove it.
 ];
 
 let dbPromise: Promise<IDBDatabase> | null = null;

@@ -42,6 +42,7 @@ import {
   Sparkles,
   Receipt,
   X,
+  CalendarRange
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -87,6 +88,8 @@ const NAV: NavSection[] = [
       { label: 'Attendance', href: '/attendance', icon: Clock     },
       { label: 'Results',    href: '/results',    icon: BarChart2 },
       { label: 'Notices',    href: '/notices',    icon: Bell      },
+      { label: "Calendar",   href: "/calendar",  icon: CalendarRange },
+
     ],
   },
   {

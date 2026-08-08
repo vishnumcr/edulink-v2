@@ -13,13 +13,13 @@
  * logic itself.
  *
  * Responsibilities:
- * ✅ Normalize raw Firestore data into well-formed AcademicCalendarYear
+ * ✅ Normalize raw Supabase rows into well-formed AcademicCalendarYear
  *    / CalendarDayOverride / CalendarEvent values
  * ✅ Save the year's start/end/terms with optimistic concurrency,
  *    surfacing a friendly error on a version conflict (same pattern
  *    as timetableService.saveDay)
- * ✅ Delta-synced fetch of a year's day overrides (see
- *    getWorkingDayOverrides)
+ * ✅ Fetch a year's day overrides straight from Supabase — no cache
+ *    layer, see the note below
  * ✅ isWorkingDay / getDayInfo — the actual "should this day count"
  *    resolution logic: Monday–Friday are working by default, Saturday/
  *    Sunday aren't, and an exception on file always wins over the
@@ -28,11 +28,16 @@
  * ✅ Validate a day override (holiday needs a label; a "working day"
  *    override is only meaningful on a date the default pattern
  *    already treats as non-working) and an event (title + valid range)
- *    before either reaches Firestore
+ *    before either reaches Supabase
  *
  * Does NOT:
- * ❌ Call Firestore directly (that's the repository's job)
- * ❌ Touch IndexedDB directly (that's calendarCache.ts's job)
+ * ❌ Call Supabase directly (that's the repository's job)
+ * ❌ Cache anything locally. The old IndexedDB delta-sync (calendarCache.ts,
+ *    now removed) existed only to dodge Firestore's per-document read
+ *    billing on a whole-collection scan — Postgres doesn't bill that
+ *    way, and a single `select` already returns a year's worth of
+ *    exceptions in one round trip, so there's nothing left to
+ *    optimize around here.
  * ❌ Enforce anything against attendance itself — this only answers
  *    "is this a working day"; it's up to each write path (the teacher
  *    app, when it exists; this project's own attendance page for
@@ -41,7 +46,6 @@
  */
 
 import { calendarRepository, RawDoc } from "@/repositories/calendar/calendarRepository";
-import { calendarCache } from "@/services/calendar/calendarcache";
 import {
   AcademicCalendarYear,
   AcademicTerm,
@@ -57,21 +61,12 @@ import {
 
 const YEAR_CONFLICT_MESSAGE = "This calendar was modified by another user. Please reload before saving.";
 
-/** Same pattern as studentsService/financeService/timetableService — see any of those for why this is duplicated per-service rather than shared. */
+/** Supabase's timestamptz columns come back as ISO strings; date columns come back as "YYYY-MM-DD" already, so only timestamp fields ever pass through here. */
 function toMillis(value: unknown): number {
   if (typeof value === "number") return value;
-  if (
-    value &&
-    typeof value === "object" &&
-    "seconds" in value &&
-    typeof (value as { seconds: unknown }).seconds === "number"
-  ) {
-    const seconds = (value as { seconds: number }).seconds;
-    const nanoseconds =
-      "nanoseconds" in value && typeof (value as { nanoseconds: unknown }).nanoseconds === "number"
-        ? (value as { nanoseconds: number }).nanoseconds
-        : 0;
-    return seconds * 1000 + Math.round(nanoseconds / 1e6);
+  if (typeof value === "string") {
+    const parsed = new Date(value).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
   }
   return 0;
 }
@@ -142,14 +137,14 @@ function normalizeAcademicYear(
   const d = raw.data;
   const rawTerms = (d.terms as Record<string, unknown>[]) || [];
   return {
-    schoolId: (d.schoolId as string) || fallback.schoolId,
-    academicYear: (d.academicYear as string) || fallback.academicYear,
-    startDate: (d.startDate as string) || "",
-    endDate: (d.endDate as string) || "",
+    schoolId: (d.school_id as string) || fallback.schoolId,
+    academicYear: (d.academic_year as string) || fallback.academicYear,
+    startDate: (d.start_date as string) || "",
+    endDate: (d.end_date as string) || "",
     terms: rawTerms.map(normalizeTerm),
     version: (d.version as number) ?? 0,
-    updatedAt: toMillis(d.updatedAt),
-    updatedBy: (d.updatedBy as string) || "",
+    updatedAt: toMillis(d.updated_at),
+    updatedBy: (d.updated_by as string) || "",
   };
 }
 
@@ -157,15 +152,15 @@ function normalizeDayOverride(raw: RawDoc): CalendarDayOverride {
   const d = raw.data;
   return {
     date: (d.date as string) || raw.id,
-    academicYear: (d.academicYear as string) || "",
+    academicYear: (d.academic_year as string) || "",
     type: ((d.type as string) === "working_day" ? "working_day" : "holiday") as CalendarDayType,
     category: d.category as HolidayCategory | undefined,
     label: (d.label as string) || "",
-    notes: d.notes as string | undefined,
-    createdBy: (d.createdBy as string) || "",
-    createdAt: toMillis(d.createdAt),
-    updatedBy: (d.updatedBy as string) || "",
-    updatedAt: toMillis(d.updatedAt),
+    notes: (d.notes as string) || undefined,
+    createdBy: (d.created_by as string) || "",
+    createdAt: toMillis(d.created_at),
+    updatedBy: (d.updated_by as string) || "",
+    updatedAt: toMillis(d.updated_at),
   };
 }
 
@@ -174,15 +169,15 @@ function normalizeEvent(raw: RawDoc): CalendarEvent {
   return {
     id: raw.id,
     title: (d.title as string) || "",
-    description: d.description as string | undefined,
-    startDate: (d.startDate as string) || "",
-    endDate: (d.endDate as string) || (d.startDate as string) || "",
+    description: (d.description as string) || undefined,
+    startDate: (d.start_date as string) || "",
+    endDate: (d.end_date as string) || (d.start_date as string) || "",
     category: ((d.category as string) || "other") as CalendarEventCategory,
-    academicYear: (d.academicYear as string) || "",
-    createdBy: (d.createdBy as string) || "",
-    createdAt: toMillis(d.createdAt),
-    updatedBy: (d.updatedBy as string) || "",
-    updatedAt: toMillis(d.updatedAt),
+    academicYear: (d.academic_year as string) || "",
+    createdBy: (d.created_by as string) || "",
+    createdAt: toMillis(d.created_at),
+    updatedBy: (d.updated_by as string) || "",
+    updatedAt: toMillis(d.updated_at),
   };
 }
 
@@ -229,48 +224,19 @@ export class CalendarService {
 
   // ── Working-day resolution — the reusable core of this module ───────────
 
-  /**
-   * ----------------------------------------------------
-   * Delta-synced fetch of every exception date in one academic year:
-   *
-   *   Read local cache + Firestore's calendarMeta watermark for this year
-   *        ↓
-   *   Compare cached watermark with the remote one
-   *        ↓
-   *   If unchanged → use the cached override map
-   *   Else         → read every calendarDays doc for this year, replace cache
-   *
-   * Same shape as timetableService.getTimetableIfChanged, adapted for
-   * a collection instead of a single document — see calendarCache.ts's
-   * header for why a stored watermark is needed here specifically.
-   * ----------------------------------------------------
-   */
+  /** Straight read of every exception date in one academic year — see this file's header for why there's no cache layer anymore. */
   async getWorkingDayOverrides(schoolId: string, academicYear: string): Promise<CalendarDayOverrideMap> {
-    const [cached, meta] = await Promise.all([
-      calendarCache.get(schoolId, academicYear),
-      calendarRepository.getCalendarMeta(schoolId),
-    ]);
-
-    const remoteWatermark = toMillis(meta?.[academicYear]);
-
-    if (cached && cached.watermark === remoteWatermark) {
-      return cached.overrides;
-    }
-
     const rawDocs = await calendarRepository.getDayOverrides(schoolId, academicYear);
     const overrides: CalendarDayOverrideMap = {};
     for (const raw of rawDocs) {
       const override = normalizeDayOverride(raw);
       overrides[override.date] = override;
     }
-
-    await calendarCache.set(schoolId, academicYear, { watermark: remoteWatermark, overrides });
     return overrides;
   }
 
-  /** Forces a fresh read, bypassing the cache short-circuit — used right after this page's own save/delete so the UI reflects it immediately. */
+  /** Kept for call-site compatibility (used right after this page's own save/delete) — now identical to getWorkingDayOverrides since there's no cache to invalidate. */
   async refreshWorkingDayOverrides(schoolId: string, academicYear: string): Promise<CalendarDayOverrideMap> {
-    await calendarCache.clear(schoolId, academicYear);
     return this.getWorkingDayOverrides(schoolId, academicYear);
   }
 
@@ -280,7 +246,7 @@ export class CalendarService {
    * on purpose — every consumer already has the overrides map in hand
    * (from getWorkingDayOverrides) by the time it needs to ask this for
    * a specific date, often for many dates in a row (e.g. rendering a
-   * month grid), so this never touches Firestore itself.
+   * month grid), so this never touches Supabase itself.
    */
   isWorkingDay(date: string, overrides: CalendarDayOverrideMap): boolean {
     const override = overrides[date];
@@ -336,11 +302,10 @@ export class CalendarService {
    * 60 days — generous for any real festival break (even a long
    * Dasara/Sankranthi stretch), but enough to catch a typo'd end date
    * (e.g. wrong year) before it silently creates months of holiday
-   * documents. type is NOT part of the form here — a bulk "working
-   * day override" range isn't a real scenario (see saveDayOverride's
-   * own check: a working-day override only makes sense on ONE
-   * specific already-non-working date), so this only ever saves
-   * type "holiday".
+   * rows. type is NOT part of the form here — a bulk "working day
+   * override" range isn't a real scenario (see saveDayOverride's own
+   * check: a working-day override only makes sense on ONE specific
+   * already-non-working date), so this only ever saves type "holiday".
    */
   async saveDayOverrideRange(
     schoolId: string,
@@ -374,7 +339,7 @@ export class CalendarService {
   }
 
   async deleteDayOverride(schoolId: string, academicYear: string, date: string): Promise<void> {
-    await calendarRepository.deleteDayOverride(schoolId, date, academicYear);
+    await calendarRepository.deleteDayOverride(schoolId, date);
   }
 
   // ── Events (exams, PTMs, functions — informational only) ────────────────
